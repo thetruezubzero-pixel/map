@@ -1,0 +1,22 @@
+# Rust
+apps/gateway/target/
+
+# Node
+apps/web/node_modules/
+apps/web/dist/
+
+# Python
+apps/api/python/.venv/
+data/pipelines/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Env files (never commit real secrets)
+.env
+apps/gateway/.env
+apps/web/.env
+apps/api/python/.env
+
+# OS/editor
+.DS_Store
