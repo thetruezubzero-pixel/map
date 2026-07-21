@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "NewsMentionEvent",
+  "namespace": "os.aether.streaming",
+  "doc": "aether.news_mentions -- NewsAPI headlines + GDELT events, keyword-filtered, with lightweight sentiment.",
+  "fields": [
+    { "name": "event_id", "type": "string" },
+    { "name": "source", "type": "string" },
+    { "name": "title", "type": "string" },
+    { "name": "url", "type": ["null", "string"], "default": null },
+    { "name": "outlet", "type": ["null", "string"], "default": null },
+    { "name": "published_at", "type": ["null", "string"], "default": null },
+    { "name": "matched_keywords", "type": { "type": "array", "items": "string" }, "default": [] },
+    { "name": "sentiment", "type": ["null", { "type": "enum", "name": "Sentiment", "symbols": ["POSITIVE", "NEGATIVE", "NEUTRAL"] }], "default": null },
+    { "name": "sentiment_score", "type": ["null", "double"], "default": null },
+    { "name": "lat", "type": ["null", "double"], "default": null },
+    { "name": "lon", "type": ["null", "double"], "default": null },
+    { "name": "detected_at", "type": "string" },
+    { "name": "license", "type": ["null", "string"], "default": null }
+  ]
+}

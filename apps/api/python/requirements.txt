@@ -11,3 +11,9 @@ elasticsearch==8.17.0
 numpy==2.2.1
 python-dotenv==1.0.1
 tenacity==9.0.0
+
+# Streaming (Phase 4) -- see app/streaming/
+confluent-kafka[avro,schemaregistry]==2.15.0
+fastavro==1.12.2
+feedparser==6.0.12
+vaderSentiment==3.3.2

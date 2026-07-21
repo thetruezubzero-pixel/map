@@ -53,6 +53,84 @@ services:
     volumes:
       - es_data:/usr/share/elasticsearch/data
 
+  kafka:
+    # Phase 4 streaming. KRaft mode (no ZooKeeper -- removed in Kafka 4.x),
+    # single combined broker+controller node -- fine for dev, not for HA.
+    # Version/ports mirror what was actually run and verified natively in
+    # this repo's dev sandbox (no Docker daemon there -- see CLAUDE.md);
+    # this service definition itself has not been exercised via
+    # `docker compose up` and should be smoke-tested before relying on it.
+    image: apache/kafka:4.3.1
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.15
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8082
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+    ports:
+      - "8082:8082"
+
+  ksqldb:
+    image: confluentinc/cp-ksqldb-server:7.5.15
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - schema-registry
+    environment:
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8082
+      # ksqlDB streams/tables default to auto.offset.reset=latest, which
+      # silently skips historical topic data for any CTAS built after the
+      # fact -- see streaming/README.md for the live repro of this from
+      # the build sandbox. earliest matches what was verified to work.
+      KSQL_KSQL_STREAMS_AUTO_OFFSET_RESET: earliest
+      # ksqlDB 7.5.x predates the JDK SecurityManager removal; needed on
+      # any Java 17+ base image the ksqlDB image ships with.
+      KSQL_OPTS: -Djava.security.manager=allow
+    ports:
+      - "8088:8088"
+
+  flink-jobmanager:
+    image: flink:2.3.0
+    restart: unless-stopped
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+    ports:
+      - "8083:8081"
+
+  flink-taskmanager:
+    image: flink:2.3.0
+    restart: unless-stopped
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 1
+
   gateway:
     build: ./apps/gateway
     restart: unless-stopped
@@ -93,6 +171,10 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: aether_entities
       ELASTICSEARCH_URL: http://elasticsearch:9200
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8082
+      KSQLDB_URL: http://ksqldb:8088
+      FLINK_REST_URL: http://flink-jobmanager:8081
     # No host port mapping: python-api has no authentication of its own
     # (see CLAUDE.md) -- it's reachable internally via the docker network
     # by both `gateway` (proxies /research) and `web`'s nginx (proxies
@@ -159,3 +241,4 @@ volumes:
   qdrant_data:
   es_data:
   airflow_postgres_data:
+  kafka_data:

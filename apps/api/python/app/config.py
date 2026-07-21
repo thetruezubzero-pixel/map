@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     elasticsearch_password: str = ""
     elasticsearch_api_key: str = ""
 
+    # Streaming (Phase 4) -- see app/streaming/
+    kafka_bootstrap_servers: str = "localhost:9092"
+    schema_registry_url: str = "http://localhost:8082"
+    ksqldb_url: str = "http://localhost:8088"
+    flink_rest_url: str = "http://localhost:8081"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

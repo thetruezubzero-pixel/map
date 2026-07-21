@@ -18,6 +18,9 @@ apps/gateway/.env
 apps/web/.env
 apps/api/python/.env
 
+# Redis dump files from local dev runs
+dump.rdb
+
 # OS/editor
 .DS_Store
 
