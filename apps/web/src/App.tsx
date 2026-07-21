@@ -1,10 +1,16 @@
-import { MapView } from '@/components/MapView'
+import { lazy, Suspense } from 'react'
 import { SearchBar } from '@/components/SearchBar'
 import { FilterPanel, DateRangeInputs } from '@/components/FilterPanel'
 import { TimelineScrubber } from '@/components/TimelineScrubber'
 import { ResearchPanel } from '@/components/ResearchPanel'
 import { EntityDetailPanel } from '@/components/EntityDetailPanel'
 import { useMapStore } from '@/store/useMapStore'
+
+// mapbox-gl is a ~1.8MB chunk (dominates initial load -- see audit: it
+// alone accounted for most of the ~3.6s TTI measured on throttled 3G).
+// Deferring it behind React.lazy lets the rest of the shell (search,
+// filters, header) become interactive without waiting on it.
+const MapView = lazy(() => import('@/components/MapView').then((m) => ({ default: m.MapView })))
 
 function App() {
   const results = useMapStore((s) => s.results)
@@ -32,7 +38,15 @@ function App() {
         </aside>
 
         <main className="relative flex-1 print:hidden">
-          <MapView />
+          <Suspense
+            fallback={
+              <div className="flex h-full w-full items-center justify-center bg-surface text-sm text-text-muted">
+                Loading map…
+              </div>
+            }
+          >
+            <MapView />
+          </Suspense>
         </main>
 
         <aside className="w-80 shrink-0 overflow-y-auto border-l border-border p-4 print:w-full print:border-0 print:p-0">

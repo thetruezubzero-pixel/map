@@ -36,7 +36,14 @@ impl Config {
             nominatim_user_agent: env::var("NOMINATIM_USER_AGENT")
                 .unwrap_or_else(|_| "AetherSovereignOS/0.2 (contact: set NOMINATIM_USER_AGENT)".to_string()),
             nominatim_api_key: env::var("NOMINATIM_API_KEY").ok(),
-            jwt_secret: env::var("JWT_SECRET").unwrap_or_else(|_| "dev-only-insecure-secret".to_string()),
+            jwt_secret: env::var("JWT_SECRET").unwrap_or_else(|_| {
+                tracing::warn!(
+                    "JWT_SECRET is not set -- falling back to a well-known insecure default. \
+                     Tokens signed with it are forgeable. Set JWT_SECRET before deploying anywhere \
+                     reachable outside your own machine."
+                );
+                "dev-only-insecure-secret".to_string()
+            }),
             python_api_base_url: env::var("PYTHON_API_BASE_URL")
                 .unwrap_or_else(|_| "http://localhost:8000".to_string()),
             rate_limit_burst: env::var("RATE_LIMIT_BURST")

@@ -30,6 +30,11 @@ const NLCD_WMS_TILE_URL =
   'https://www.mrlc.gov/geoserver/mrlc_display/wms?service=WMS&version=1.1.1&request=GetMap' +
   '&layers=NLCD_Land_Cover&bbox={bbox-epsg-3857}&width=256&height=256&srs=EPSG:3857&format=image/png&transparent=true'
 
+// Stable object reference (module scope) so the `terrain` prop below
+// doesn't change identity every render when the layer is on -- react-map-gl
+// diffs this prop and calls mapbox's setTerrain() on identity change.
+const TERRAIN_CONFIG = { source: 'mapbox-dem', exaggeration: 1.5 } as const
+
 export function MapView() {
   const viewport = useMapStore((s) => s.viewport)
   const setViewport = useMapStore((s) => s.setViewport)
@@ -53,6 +58,8 @@ export function MapView() {
     () => results.filter((r) => r.lon != null && r.lat != null && visibleEntityTypes.has(r.entity_type)),
     [results, visibleEntityTypes],
   )
+
+  const terrainConfig = layers.terrain ? TERRAIN_CONFIG : undefined
 
   useEffect(() => {
     if (!layers.newsHeatmap) {
@@ -127,7 +134,7 @@ export function MapView() {
       }
       onClick={handleClick}
       mapStyle={BASE_STYLES[baseStyle]}
-      terrain={layers.terrain ? { source: 'mapbox-dem', exaggeration: 1.5 } : undefined}
+      terrain={terrainConfig}
       style={{ width: '100%', height: '100%' }}
     >
       <NavigationControl position="top-right" />

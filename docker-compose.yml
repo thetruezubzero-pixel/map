@@ -65,7 +65,7 @@ services:
       ALLOWED_ORIGINS: http://localhost:5173
       NOMINATIM_BASE_URL: https://nominatim.openstreetmap.org
       NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:?set a real contact -- Nominatim blocks placeholder domains}
-      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret}
+      JWT_SECRET: ${JWT_SECRET:?set a real random secret -- the previous default was a well-known string committed to this public repo, making tokens forgeable}
       PYTHON_API_BASE_URL: http://python-api:8000
     ports:
       - "8080:8080"
@@ -93,8 +93,13 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: aether_entities
       ELASTICSEARCH_URL: http://elasticsearch:9200
-    ports:
-      - "8000:8000"
+    # No host port mapping: python-api has no authentication of its own
+    # (see CLAUDE.md) -- it's reachable internally via the docker network
+    # by both `gateway` (proxies /research) and `web`'s nginx (proxies
+    # /py-api/ for graph+analytics), which is the only access it should
+    # have. Audit finding: this was previously exposed as "8000:8000",
+    # putting unauthenticated research-job creation and entity-resolution
+    # review actions directly on the host's network.
 
   web:
     build:

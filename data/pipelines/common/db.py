@@ -20,12 +20,21 @@ def get_connection():
 
 def upsert_entities(records: list[dict[str, Any]]) -> int:
     """Each record: name, entity_type, source, license, lat, lon, metadata.
-    Idempotent on (name, source, entity_type) via a lightweight upsert."""
+    Idempotent on (source, entity_type, name) -- see
+    apps/gateway/migrations/0004_entities_idempotency.sql for the unique
+    constraint this relies on (without it, `ON CONFLICT DO NOTHING` has
+    nothing to conflict against, since `id` is always a fresh random UUID,
+    and every re-run silently duplicates every row).
+
+    Returns the number of rows actually inserted (not the input count --
+    rows skipped as duplicates are not counted).
+    """
     if not records:
         return 0
 
     conn = get_connection()
     try:
+        inserted = 0
         with conn, conn.cursor() as cur:
             for record in records:
                 lat = record.get("lat")
@@ -39,7 +48,7 @@ def upsert_entities(records: list[dict[str, Any]]) -> int:
                     f"""
                     INSERT INTO research_entities (name, entity_type, source, license, geom, metadata)
                     VALUES (%s, %s, %s, %s, {geom_expr}, %s)
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (source, entity_type, name) DO NOTHING
                     """,
                     [
                         record["name"],
@@ -50,6 +59,7 @@ def upsert_entities(records: list[dict[str, Any]]) -> int:
                         json.dumps(record.get("metadata", {})),
                     ],
                 )
-        return len(records)
+                inserted += cur.rowcount
+        return inserted
     finally:
         conn.close()

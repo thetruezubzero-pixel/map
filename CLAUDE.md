@@ -54,6 +54,38 @@ docker-compose.yml   Full local dev stack
 - Research jobs default to `requires_review = true`; do not auto-finalize
   jobs without a human review step.
 
+## Architecture / trust boundaries
+
+- **`python-api` has no authentication of its own** (no JWT check, no
+  API key). It must never get a host port mapping in docker-compose --
+  it's reachable only via the docker network, from `gateway` (proxies
+  `/research`) and `web`'s nginx (proxies `/py-api/` for graph +
+  analytics). If you add a new consumer of `python-api`, route it through
+  one of those two, don't expose `python-api` directly.
+- **`JWT_SECRET` must be set explicitly** in any environment reachable
+  outside your own machine (`docker-compose.yml` now requires it via
+  `${JWT_SECRET:?...}`). The old default (`dev-only-insecure-secret`) is
+  a public string in this repo's history -- anyone who knows it can forge
+  a token. The gateway logs a `WARN` if it falls back to that default.
+- **Geo queries must be indexed on the same expression they filter on.**
+  `research_entities`'s spatial queries cast `geom::geography` (for
+  accurate meter-based `ST_DWithin`/`ST_Distance`), which a plain
+  `geometry`-typed GIST index does *not* serve -- confirmed via
+  `EXPLAIN ANALYZE` regression (a 2km-radius query against 55k rows took
+  ~3s as a sequential scan before `research_entities_geog_idx`
+  (`0006_geography_index.sql`) fixed it to ~20ms). If you add a new
+  geometry column or a new geography-cast query, add a matching
+  expression index in the same migration.
+- **New `research_entities`-writing code must go through
+  `upsert_entities`**, not a raw `INSERT`. It relies on the
+  `(source, entity_type, name)` unique constraint
+  (`0004_entities_idempotency.sql`) for its `ON CONFLICT` to actually do
+  something -- without a matching unique constraint, `ON CONFLICT DO
+  NOTHING` silently has nothing to conflict against (every row's `id` is
+  a fresh random UUID), and "idempotent" ingestion duplicates every
+  record on every re-run. This was a real, confirmed-in-production-shape
+  bug until the audit that added that constraint.
+
 ## Development
 
 - Gateway: `cd apps/gateway && cargo check` / `cargo run` (needs `DATABASE_URL`).

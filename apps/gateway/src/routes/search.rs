@@ -48,7 +48,10 @@ pub async fn search(
     let limit = params.limit.unwrap_or(25).clamp(1, 200);
     let offset = params.offset.unwrap_or(0).max(0);
 
-    let has_point = params.lat.is_some() && params.lon.is_some();
+    let point = match (params.lat, params.lon) {
+        (Some(lat), Some(lon)) => Some((lat, lon)),
+        _ => None,
+    };
 
     let mut qb: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(
         r#"
@@ -103,8 +106,7 @@ pub async fn search(
         qb.push_bind(date_to);
     }
 
-    if has_point {
-        let (lat, lon) = (params.lat.unwrap(), params.lon.unwrap());
+    if let Some((lat, lon)) = point {
         let radius = params.radius_m.unwrap_or(5000.0);
         qb.push(" AND ST_DWithin(e.geom::geography, ST_SetSRID(ST_MakePoint(");
         qb.push_bind(lon);
