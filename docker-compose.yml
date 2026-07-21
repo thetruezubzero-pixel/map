@@ -113,6 +113,12 @@ services:
   flink-jobmanager:
     image: flink:2.3.0
     restart: unless-stopped
+    # cep_alerts.py (streaming/flink/) needs flink-sql-connector-kafka
+    # and flink-sql-avro-confluent-registry on the classpath -- mount
+    # them into lib/ here to match the native setup verified in
+    # streaming/README.md, e.g.:
+    #   volumes:
+    #     - ./streaming/flink/jars:/opt/flink/lib/custom
     command: jobmanager
     environment:
       FLINK_PROPERTIES: |

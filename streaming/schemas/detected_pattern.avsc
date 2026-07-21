@@ -1,0 +1,20 @@
+{
+  "type": "record",
+  "name": "DetectedPattern",
+  "namespace": "os.aether.streaming",
+  "doc": "aether.detected_patterns -- internal, not one of the 6 user-facing topics. Raw output of the Flink CEP/anomaly/correlation job in streaming/flink/cep_alerts.py, before per-user subscription matching. A separate alert-dispatch step (Task 28, once user_subscriptions exists in Postgres) reads this topic and the real per-user aether.user_alerts events, since Flink 2.3.0 has no compatible flink-connector-jdbc release to join against Postgres directly -- see streaming/README.md.",
+  "fields": [
+    { "name": "pattern_id", "type": "string" },
+    { "name": "pattern_type", "type": "string", "doc": "FILING_CLUSTER | FILING_VOLUME_SPIKE | REGISTRATION_NEWS_CORRELATION -- plain string, not an Avro enum: Flink SQL has no ENUM column type, and an enum here can't be read back through a STRING-typed Table column (Avro enum/string aren't resolution-compatible) -- confirmed live via AvroTypeException before this was changed." },
+    { "name": "severity", "type": "string", "doc": "INFO | WARNING | CRITICAL, see pattern_type doc for why this is a plain string" },
+    { "name": "title", "type": "string" },
+    { "name": "description", "type": "string" },
+    { "name": "source_topic", "type": "string" },
+    { "name": "entity_name", "type": ["null", "string"], "default": null },
+    { "name": "cik", "type": ["null", "string"], "default": null },
+    { "name": "evidence_json", "type": "string", "default": "{}" },
+    { "name": "detected_at", "type": "string" },
+    { "name": "window_start", "type": ["null", "string"], "default": null },
+    { "name": "window_end", "type": ["null", "string"], "default": null }
+  ]
+}

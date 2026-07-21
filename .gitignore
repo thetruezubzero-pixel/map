@@ -8,6 +8,7 @@ apps/web/dist/
 # Python
 apps/api/python/.venv/
 data/pipelines/.venv/
+streaming/flink/.venv/
 __pycache__/
 *.pyc
 .pytest_cache/

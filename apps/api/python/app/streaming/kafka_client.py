@@ -24,6 +24,10 @@ TOPICS = {
     "news_mentions": "aether.news_mentions",
     "entity_resolved": "aether.entity_resolved",
     "user_alerts": "aether.user_alerts",
+    # Internal -- not one of the 6 user-facing topics. Raw Flink CEP
+    # output before per-user subscription matching, see
+    # streaming/schemas/detected_pattern.avsc.
+    "detected_patterns": "aether.detected_patterns",
 }
 
 SCHEMA_FILES = {
@@ -33,6 +37,7 @@ SCHEMA_FILES = {
     TOPICS["news_mentions"]: "news_mention.avsc",
     TOPICS["entity_resolved"]: "entity_resolved.avsc",
     TOPICS["user_alerts"]: "user_alert.avsc",
+    TOPICS["detected_patterns"]: "detected_pattern.avsc",
 }
 
 
@@ -66,18 +71,30 @@ def ensure_topics(num_partitions: int = 3, replication_factor: int = 1) -> list[
 
 
 def ensure_schemas() -> list[str]:
-    """Registers every topic's Avro schema with Schema Registry up front.
-    Without this, a topic that hasn't had a message produced to it yet has
-    no registered schema, and tools that infer schema from the registry
-    (ksqlDB's `CREATE STREAM ... WITH (VALUE_FORMAT='AVRO')` with no
-    column list) fail with 'Schema ... does not exist'. Idempotent --
-    registering an identical schema again just returns the existing id.
+    """Registers every producer-facing topic's Avro schema with Schema
+    Registry up front. Without this, a topic that hasn't had a message
+    produced to it yet has no registered schema, and tools that infer
+    schema from the registry (ksqlDB's `CREATE STREAM ... WITH
+    (VALUE_FORMAT='AVRO')` with no column list) fail with 'Schema ...
+    does not exist'. Idempotent -- registering an identical schema again
+    just returns the existing id.
+
+    aether.detected_patterns is deliberately excluded: it's written
+    solely by the Flink job in streaming/flink/cep_alerts.py, which
+    auto-derives its own Avro schema from its Table SQL column types on
+    first write. Pre-registering streaming/schemas/detected_pattern.avsc
+    here caused a live 409 (schema-registry rejects it as incompatible
+    with Flink's structurally-different auto-derived schema, even though
+    both use the same field names/types) -- Flink needs to be the sole
+    registrar for topics it's the only producer of.
     """
     from confluent_kafka.schema_registry import Schema
 
     client = _schema_registry_client()
     registered = []
     for topic in TOPICS.values():
+        if topic == TOPICS["detected_patterns"]:
+            continue
         schema = Schema(load_schema(topic), schema_type="AVRO")
         client.register_schema(f"{topic}-value", schema)
         registered.append(topic)

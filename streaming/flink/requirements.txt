@@ -1,0 +1,9 @@
+# Phase 4 / Task 27 -- deliberately its own venv, NOT apps/api/python's.
+# apache-flink pulls in apache-beam and a large transitive dependency
+# tree, and force-downgraded numpy (2.2.1 -> 2.1.3) when first installed
+# into the shared FastAPI venv -- confirmed live, then reverted. The
+# Flink job runs as a submitted cluster job (bin/flink run), not an
+# import of the FastAPI service, so it has no reason to share a venv
+# with it.
+apache-flink==2.3.0
+typing_extensions
