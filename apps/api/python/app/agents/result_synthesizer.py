@@ -37,10 +37,18 @@ class ResultSynthesizerAgent(Agent):
     name = "result_synthesizer"
 
     async def run(
-        self, plan: ResearchPlan, records: list[SourcedRecord], job_id: UUID | None = None
+        self,
+        plan: ResearchPlan,
+        records: list[SourcedRecord],
+        job_id: UUID | None = None,
+        model: str | None = None,
     ) -> ResearchReport:
+        """`model` lets a caller pin this run to a specific model --
+        used by app/agent_swarm/services/swarm_coordinator.py to run
+        several differently-modeled instances of this role. Omit it
+        (the default) for the original single-agent behavior."""
         settings = get_settings()
-        summary = await self._summarize(plan, records, settings)
+        summary = await self._summarize(plan, records, settings, model)
         timeline = self._build_timeline(records)
         relationships = self._build_relationships(records)
 
@@ -59,7 +67,9 @@ class ResultSynthesizerAgent(Agent):
         )
         return report
 
-    async def _summarize(self, plan: ResearchPlan, records: list[SourcedRecord], settings) -> str:
+    async def _summarize(
+        self, plan: ResearchPlan, records: list[SourcedRecord], settings, model: str | None = None
+    ) -> str:
         if not records:
             return "No public records matched this query."
 
@@ -73,7 +83,7 @@ class ResultSynthesizerAgent(Agent):
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": f"Query: {plan.normalized_query}\nRecords: {digest}"},
                 ],
-                model=settings.openrouter_default_model,
+                model=model or settings.openrouter_default_model,
                 fallback_models=[settings.openrouter_fallback_model],
                 temperature=0.2,
                 max_tokens=400,

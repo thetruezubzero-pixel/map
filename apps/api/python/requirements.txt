@@ -17,3 +17,6 @@ confluent-kafka[avro,schemaregistry]==2.15.0
 fastavro==1.12.2
 feedparser==6.0.12
 vaderSentiment==3.3.2
+
+# Agent swarm (Phase 5) -- see app/agent_swarm/
+cryptography==49.0.0

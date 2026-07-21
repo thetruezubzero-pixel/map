@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     ksqldb_url: str = "http://localhost:8088"
     flink_rest_url: str = "http://localhost:8081"
 
+    # Weighted agent swarm (Phase 5) -- see app/agent_swarm/
+    agent_swarm_enabled: bool = True
+    heirloom_device_key: str = ""  # AES-256-GCM key for heirloom_sync.py; empty disables heirloom export
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

@@ -31,14 +31,19 @@ Respond with ONLY a JSON object matching this shape:
 class QueryAnalyzerAgent(Agent):
     name = "query_analyzer"
 
-    async def run(self, query: str, job_id: UUID | None = None) -> ResearchPlan:
+    async def run(self, query: str, job_id: UUID | None = None, model: str | None = None) -> ResearchPlan:
+        """`model` lets a caller pin this run to a specific model instead
+        of the default fast-model routing -- used by
+        app/agent_swarm/services/swarm_coordinator.py to run several
+        differently-modeled agent instances of this same role. Omit it
+        (the default) for the original single-agent behavior."""
         settings = get_settings()
         model_used, response = await openrouter_client.complete(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
             ],
-            model=settings.openrouter_fast_model,
+            model=model or settings.openrouter_fast_model,
             fallback_models=[settings.openrouter_default_model, settings.openrouter_fallback_model],
             temperature=0.1,
             max_tokens=500,
