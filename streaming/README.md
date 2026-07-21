@@ -280,3 +280,12 @@ to sub-500ms in a real deployment needs: continuously-arriving
 higher-volume streams (watermarks advance from real event flow rather
 than falling back to idle-timeout), and/or a much tighter idle-timeout
 tuned against actual traffic patterns rather than this dev default.
+
+The rest of the path is fast, and this was also measured, not assumed:
+alert_dispatcher's Postgres INSERT into `user_alerts` to the browser
+receiving it over `GET /ws/alerts` (LISTEN/NOTIFY -> fetch row -> WS
+send) was **~0.4 seconds** in a live headless-browser run (see
+`apps/web`'s Task 29 commit message). So the end-to-end budget is
+dominated entirely by the Flink CEP leg's watermark-driven latency, not
+by the dispatcher or the delivery path -- useful to know for where
+future latency work should actually focus.
