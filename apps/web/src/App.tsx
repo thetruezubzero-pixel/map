@@ -6,6 +6,7 @@ import { ResearchPanel } from '@/components/ResearchPanel'
 import { EntityDetailPanel } from '@/components/EntityDetailPanel'
 import { AlertPanel } from '@/components/AlertPanel'
 import { SystemHealthPanel } from '@/components/SystemHealthPanel'
+import { DashboardNav } from '@/components/DashboardNav'
 import { useMapStore } from '@/store/useMapStore'
 import { useAlertStore } from '@/store/useAlertStore'
 
@@ -25,6 +26,7 @@ function App() {
     <div className="flex h-screen flex-col bg-background text-text">
       <header className="flex items-center gap-4 border-b border-border px-4 py-3 print:hidden">
         <h1 className="whitespace-nowrap text-lg font-semibold text-text">Aether Sovereign OS</h1>
+        <DashboardNav />
         <div className="w-full max-w-xl">
           <SearchBar />
         </div>

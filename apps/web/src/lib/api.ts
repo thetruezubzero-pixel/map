@@ -321,3 +321,126 @@ function triggerDownload(filename: string, blob: Blob): void {
   a.click()
   URL.revokeObjectURL(url)
 }
+
+// --- Phase 5: weighted agent swarm (app/agent_swarm/, apps/api/python/app/routers/agent_swarm.py) ---
+
+export const AGENT_ROLES = ['query_analyzer', 'data_retriever', 'result_synthesizer'] as const
+export type AgentRole = (typeof AGENT_ROLES)[number]
+
+export const AGENT_LEVELS = ['amateur', 'actuarial', 'coordinator'] as const
+export type AgentLevel = (typeof AGENT_LEVELS)[number]
+
+export interface AgentSummary {
+  id: string
+  name: string
+  role: AgentRole
+  level: AgentLevel
+  model: string
+  current_weight: number
+  consecutive_successes: number
+  total_tasks: number
+  total_successes: number
+  accuracy: number | null
+  graduated: boolean
+  parent_agent_id: string | null
+  mentor_agent_id: string | null
+  user_id: string | null
+}
+
+export interface WeightHistoryEntry {
+  weight: number
+  delta: number
+  reason: string
+  created_at: string
+}
+
+export interface AgentTaskEntry {
+  id: string
+  role: AgentRole
+  consensus_output: Record<string, unknown>
+  was_winner: boolean
+  reward_applied: boolean
+  created_at: string
+}
+
+export interface AgentDetail extends AgentSummary {
+  recent_tasks: AgentTaskEntry[]
+  weight_trajectory: WeightHistoryEntry[]
+}
+
+export function listAgents(userId?: string): Promise<AgentSummary[]> {
+  const params = userId ? `?user_id=${encodeURIComponent(userId)}` : ''
+  return pyRequest<AgentSummary[]>(`/agents${params}`)
+}
+
+export function getAgent(agentId: string): Promise<AgentDetail> {
+  return pyRequest<AgentDetail>(`/agents/${agentId}`)
+}
+
+export interface SwarmVote {
+  agent_id: string
+  agent_level: AgentLevel
+  weight: number
+  confidence: number
+  output_key: string
+  reasoning: string
+}
+
+export interface SwarmTask {
+  id: string
+  job_id: string | null
+  role: AgentRole
+  agent_count: number
+  votes: SwarmVote[]
+  winning_agent_id: string | null
+  reward_applied: boolean
+  created_at: string
+}
+
+export function getSwarmActivity(limit = 50): Promise<{ tasks: SwarmTask[] }> {
+  return pyRequest(`/swarm?limit=${limit}`)
+}
+
+export interface TrainingEntry {
+  id: string
+  role: AgentRole
+  model: string
+  total_tasks: number
+  total_successes: number
+  accuracy: number | null
+  consecutive_successes: number
+  consecutive_needed: number
+  accuracy_needed: number
+  graduated: boolean
+  mentor_agent_id: string | null
+}
+
+export function getTrainingProgress(userId?: string): Promise<{ amateurs: TrainingEntry[] }> {
+  const params = userId ? `?user_id=${encodeURIComponent(userId)}` : ''
+  return pyRequest(`/training${params}`)
+}
+
+export interface Heirloom {
+  id: string
+  agent_id: string
+  agent_name: string
+  role: AgentRole
+  level: AgentLevel
+  device_id: string
+  backend: string
+  content_hash: string
+  verified: boolean
+  created_at: string
+}
+
+export function listHeirlooms(userId?: string): Promise<{ heirlooms: Heirloom[] }> {
+  const params = userId ? `?user_id=${encodeURIComponent(userId)}` : ''
+  return pyRequest(`/heirlooms${params}`)
+}
+
+export function exportHeirloom(agentId: string, userId: string, deviceId: string): Promise<Heirloom> {
+  return pyRequest<Heirloom>(`/heirlooms/${agentId}/export`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, device_id: deviceId }),
+  })
+}
