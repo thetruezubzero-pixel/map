@@ -131,7 +131,51 @@ finding.
   Geofence subscriptions don't match anything yet -- the CEP job doesn't
   carry coordinates on its output; documented, not silently stubbed.
 
-## Phase 5 (future, needs credentials/legal review)
+## Phase 5 (built) -- weighted multi-agent swarm
+
+Upgrades the Phase 2 3-agent pipeline (query_analyzer -> data_retriever
+-> result_synthesizer) into a weighted swarm with real, citable
+algorithms: the Hedge/multiplicative-weights-update algorithm for credit
+assignment, UCB1 exploration bonus for under-tried agents, a
+Beta-Binomial Bayesian reliability estimate per agent, and a Monte Carlo
+simulation for risk-aware consensus confidence. See
+`apps/api/python/app/agent_swarm/` module docstrings for the exact
+citations and `/agents`, `/swarm`, `/training`, `/heirlooms` in the
+frontend for the dashboard.
+
+- `agent_registry`/`task_history`/`weight_history`/`heirloom_manifest`
+  (`apps/gateway/migrations/0008_agent_swarm.sql`).
+- Amateur/actuarial/coordinator agent levels; amateurs run in real
+  shadow mode (zero vote weight) until graduating at 90% accuracy AND 50
+  consecutive successes, both required.
+- `data_retriever` deliberately stays single-agent, not swarmed --
+  deterministic tool execution has no judgment call for multiple
+  instances to vote on.
+- New `POST /research/{job_id}/review` is what triggers credit
+  assignment -- it didn't exist before Phase 5, and without it credit
+  assignment has no way to ever fire.
+- Knowledge distillation is real prompt-level curation (few-shot
+  exemplars from a senior agent's confirmed-successful outputs), not
+  gradient-based weight distillation -- our agents are OpenRouter API
+  calls to hosted models with no logit/weight access, so the literal
+  technique from the distillation literature isn't available here.
+- Heirloom persistence: a real, working `PostgresEncryptedHeirloomStore`
+  (AES-256-GCM) behind a `HeirloomStore` interface. The spec's IPFS +
+  blockchain attestation layer is `IPFSBlockchainHeirloomStore`, a
+  documented stub that raises `NotImplementedError` rather than faking a
+  hash/tx id or spending real gas fees without explicit authorization --
+  see Phase 7 below for its activation plan.
+- Not done, flagged rather than silently omitted: the `/agents`,
+  `/swarm`, `/training`, `/heirlooms` API routes have no auth (any
+  caller can pass any `user_id`) -- fine for a same-origin dev dashboard,
+  not fine to expose publicly as-is.
+- The full swarm success path (multiple differently-modeled agents
+  actually producing different outputs and voting) is unverified beyond
+  graceful degradation -- `OPENROUTER_API_KEY` in the dev/build sandbox
+  is a placeholder, the same limitation already documented for
+  OpenCorporates/NewsAPI in earlier phases.
+
+## Phase 6 (future, needs credentials/legal review)
 
 - County assessor, PACER ingestion (still business/property records —
   requires credentialing and a legal review of each source's ToS)
@@ -140,6 +184,17 @@ finding.
 - Flink JDBC connector once a Flink-2.x-compatible release exists (would
   replace the Postgres-side alert_dispatcher.py matching step with a live
   join inside Flink itself)
+
+## Phase 7 (future, needs real infrastructure + explicit authorization)
+
+- Activate `IPFSBlockchainHeirloomStore`
+  (`apps/api/python/app/agent_swarm/services/heirloom_sync.py`): real
+  IPFS pinning service credentials, a real wallet with funded gas on
+  whichever chain (Polygon was the sandbox's suggestion, cheap L2 gas),
+  and explicit sign-off before any real transaction is sent, since this
+  spends real money and needs real private-key handling. Until then,
+  `PostgresEncryptedHeirloomStore` is the only backend and heirlooms
+  don't leave this platform's own database.
 
 ## Explicit non-goals (require a written scope decision to ever revisit)
 
@@ -152,6 +207,9 @@ owner, documented here with rationale and safeguards:
   device-presence tracking, consented or otherwise. This product does not
   track people's physical devices.
 - **No blockchain identity / DID system** for user or subject identity.
+  (Phase 7's `IPFSBlockchainHeirloomStore` is scoped narrowly to agent
+  *weight snapshot* content-addressing/attestation, not identity -- it
+  still isn't built/wired yet either way, see Phase 7 above.)
 - **No OPSEC evasion tooling** — no decoy traffic generation, fingerprint
   randomization, or anti-attribution features. This is a research tool
   that operates in the open, not a covert collection tool.

@@ -26,6 +26,8 @@ apps/
     app/routers/     research, graph, analytics, health endpoints
     app/streaming/   Kafka producers (SEC EDGAR, OpenCorporates, NewsAPI/GDELT, OSM)
                       + the alert dispatcher (Flink output -> per-user alerts)
+    app/agent_swarm/ Weighted multi-agent swarm: credit assignment, consensus
+                      voting, prompt-level distillation, heirloom persistence
 data/
   pipelines/         Airflow DAGs: OSM, NewsAPI, OpenCorporates, SEC EDGAR, Census,
                       USGS, GDELT, Data.gov, entity resolution, Elasticsearch sync
@@ -57,6 +59,17 @@ docker-compose.yml   Full local dev stack
   Do not work around this from application code.
 - Research jobs default to `requires_review = true`; do not auto-finalize
   jobs without a human review step.
+- Agent-swarm heirlooms (`heirloom_manifest`, `agent_registry.user_id`)
+  are per-user only -- `app/agent_swarm/services/heirloom_sync.py`'s
+  `import_heirloom_to_successor` enforces this at runtime (raises if
+  source/successor agents belong to different users). Do not add
+  cross-user knowledge sharing without a written scope decision in
+  ROADMAP.md (see its "Explicit non-goals" section).
+- Do not wire `IPFSBlockchainHeirloomStore`
+  (`apps/api/python/app/agent_swarm/services/heirloom_sync.py`) to real
+  IPFS/blockchain infrastructure without explicit authorization -- it
+  spends real money (gas fees) and needs real private-key handling. See
+  ROADMAP.md Phase 7.
 
 ## Architecture / trust boundaries
 
