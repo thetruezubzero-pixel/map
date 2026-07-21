@@ -17,7 +17,7 @@ CLAUDE.md).
 - Docker Compose local dev stack
 - CLAUDE.md + ROADMAP.md scope boundaries
 
-## Phase 2 — Frontend + multi-agent orchestration + hybrid search (this phase)
+## Phase 2 — Frontend + multi-agent orchestration + hybrid search (complete)
 
 - React 19 frontend (Mapbox GL, Tailwind, shadcn/ui, Zustand): search UI,
   faceted filters, map interactions, timeline scrubber
@@ -29,23 +29,67 @@ CLAUDE.md).
   records only), result synthesizer (business entity graphs, timelines).
   Human-in-the-loop review queue. Immutable audit log.
 - Hybrid search foundation: Qdrant (vector + geo payload filtering),
-  Redis Search (FT.HYBRID), Elasticsearch (index mappings prepped for
-  Phase 3 aggregation)
+  Redis Search (vector+tag+geo hybrid queries), Elasticsearch (index
+  mappings prepped for Phase 3 aggregation)
 - Airflow DAGs: OSM ingestion, NewsAPI aggregation, OpenCorporates sync —
   each with source attribution, license tracking, PII-scrubbing middleware
 - Claude Code subagents (frontend-qa, api-reviewer, security-checker,
   docs-maintainer) with `SubagentStop` hooks: test gate, secret scrubbing,
   out-of-scope write block
 
-## Phase 3 (future, needs credentials/legal review)
+## Phase 3 — Free data expansion + entity resolution (complete)
 
-- County assessor, SEC EDGAR, PACER ingestion (public filings, still
-  business/property records — requires credentialing and a legal review
-  of each source's ToS before ingestion starts)
-- Elasticsearch aggregation layer activated
+Free/public sources only — no paid-tier APIs, no PACER, no county
+assessor accounts (those still need credentialing + legal review, see
+below).
 
-## Phase 4+ (future, unscheduled)
+- New Airflow DAGs: `sec_edgar_ingestion` (SEC EDGAR via EdgarTools),
+  `census_tiger_sync` (TIGERweb county boundaries), `usgs_elevation_sync`
+  (elevation via EPQS), `gdelt_events_sync` (GDELT 2.0 Doc API),
+  `data_gov_search_sync` (CKAN dataset search — see note below),
+  `opencorporates_sync` moved to weekly to stay under the free-tier quota
+- Entity resolution pipeline (`apps/api/python/app/graph/`): name
+  normalization + fuzzy matching, exact-ID matching (CIK/
+  OpenCorporates-ID/EIN), address proximity (PostGIS `ST_DWithin`), and an
+  officer-overlap signal that compares two *company* records without ever
+  storing or exposing the officer's name (see CLAUDE.md guardrail).
+  Confidence ≥ 0.8 auto-writes a `same_as` edge; everything else queues in
+  `entity_resolution_candidates` for human review via
+  `/graph/review/queue` + `/graph/review/{id}`.
+- Elasticsearch activated: geo-distance search, geohash-grid heatmap
+  aggregation, and ES|QL `STATS...BY` queries
+  (`apps/api/python/app/search/elasticsearch_setup.py`), synced from
+  Postgres by the `elasticsearch_sync` DAG. ENRICH spatial joins against
+  census-tract/zoning polygons are **not** implemented — there's no
+  polygon boundary layer yet, only points.
+- Frontend: base-style switcher, per-entity-type layer visibility, a
+  news-density heatmap layer, a Mapbox-native 3D terrain layer, an NLCD
+  land-cover overlay (MRLC public WMS), a D3 force-directed entity graph
+  view, and JSON/CSV/print-to-PDF export.
+- `.claude/agents/` (frontend-qa, api-reviewer, security-checker,
+  docs-maintainer) + `.claude/hooks/` wired to `SubagentStop`
+  (scope-guard, secret-scrub, test-gate) + mirrored `.githooks/`
+  (pre-commit/pre-push/post-merge) for the git-native path — opt in with
+  `git config core.hooksPath .githooks`.
 
+Known gaps, called out rather than papered over:
+- `data_gov_search_sync` is written against the documented CKAN API, but
+  `catalog.data.gov`'s classic API currently 404s (the site was
+  restructured); the DAG fails soft until that's fixed upstream.
+- No transit (GTFS) layer — Data.gov's current inaccessibility and the
+  absence of a GTFS-parsing DAG mean this wasn't built, not just toggled
+  off.
+- No demographics-by-tract choropleth or parcel/zoning polygon layer —
+  same root cause: no polygon boundary data ingested yet.
+- "Business markers sized by revenue" wasn't implemented — none of the
+  free sources in this phase expose revenue data.
+
+## Phase 4 (future, needs credentials/legal review)
+
+- County assessor, PACER ingestion (still business/property records —
+  requires credentialing and a legal review of each source's ToS)
+- GTFS transit feeds, census-tract/zoning polygon ingestion (unlocks
+  ENRICH spatial joins and choropleth layers)
 - Streaming pipeline (Kafka/Flink)
 
 ## Explicit non-goals (require a written scope decision to ever revisit)
@@ -63,8 +107,11 @@ owner, documented here with rationale and safeguards:
   randomization, or anti-attribution features. This is a research tool
   that operates in the open, not a covert collection tool.
 - **No individual dossiers or personal relationship mapping.** The entity
-  graph is corporate parent/subsidiary only. `research_entities` has no
-  `person` type (DB-enforced, see CLAUDE.md).
+  graph is corporate parent/subsidiary and resolved-duplicate (`same_as`)
+  only. `research_entities` has no `person` type (DB-enforced, see
+  CLAUDE.md). Officer/director names from SEC/OpenCorporates stay inside
+  a company record's filing metadata — never their own row, never their
+  own graph node.
 - **No zk-SNARKs / advanced cryptography** — no stated use case.
 
 If a future contributor believes one of these is genuinely needed, open

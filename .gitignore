@@ -20,3 +20,6 @@ apps/api/python/.env
 
 # OS/editor
 .DS_Store
+
+# Local Claude Code session permission overrides -- never shared
+.claude/settings.local.json

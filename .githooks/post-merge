@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Enable with: git config core.hooksPath .githooks
+# Runs after a merge completes -- informational, doesn't block (the merge
+# already happened). Runs the full suite regardless of which files changed,
+# since a merge can combine changes from multiple branches at once.
+set -uo pipefail
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root" || exit 0
+
+fail=0
+
+if [ -d apps/gateway ]; then
+  echo "[post-merge] cargo check..." >&2
+  (cd apps/gateway && cargo check --quiet) || fail=1
+fi
+
+if [ -d apps/web/node_modules ]; then
+  echo "[post-merge] npm run build..." >&2
+  (cd apps/web && npm run build --silent) || fail=1
+fi
+
+if [ -d apps/api/python/.venv ]; then
+  echo "[post-merge] pytest..." >&2
+  (cd apps/api/python && . .venv/bin/activate && python -m pytest -q) || fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "[post-merge] WARNING: full suite failed after merge -- fix before continuing work." >&2
+fi
+
+echo "[post-merge] Reminder: if this merge added/removed an endpoint, DAG, or subagent, run the docs-maintainer subagent to keep ROADMAP.md/CLAUDE.md in sync." >&2
+
+exit 0

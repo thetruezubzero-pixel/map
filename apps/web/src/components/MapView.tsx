@@ -1,8 +1,16 @@
-import { useCallback, useMemo } from 'react'
-import Map, { Marker, NavigationControl, Popup, type MapMouseEvent } from 'react-map-gl/mapbox'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Map, {
+  Layer,
+  Marker,
+  NavigationControl,
+  Popup,
+  Source,
+  type MapMouseEvent,
+} from 'react-map-gl/mapbox'
+import type { FeatureCollection, Point } from 'geojson'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { useMapStore } from '@/store/useMapStore'
-import { search } from '@/lib/api'
+import { BASE_STYLES, useMapStore } from '@/store/useMapStore'
+import { getHeatmap, search } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ?? ''
@@ -15,20 +23,63 @@ const ENTITY_COLORS: Record<string, string> = {
   news_mention: '#ff5c7c',
 }
 
+// MRLC's public WMS (see apps/api/python/app/search/elasticsearch_setup.py
+// note on ENRICH for the polygon-data caveat). {bbox-epsg-3857} is a
+// Mapbox GL-specific template var for WMS raster sources.
+const NLCD_WMS_TILE_URL =
+  'https://www.mrlc.gov/geoserver/mrlc_display/wms?service=WMS&version=1.1.1&request=GetMap' +
+  '&layers=NLCD_Land_Cover&bbox={bbox-epsg-3857}&width=256&height=256&srs=EPSG:3857&format=image/png&transparent=true'
+
 export function MapView() {
   const viewport = useMapStore((s) => s.viewport)
   const setViewport = useMapStore((s) => s.setViewport)
+  const baseStyle = useMapStore((s) => s.baseStyle)
   const results = useMapStore((s) => s.results)
   const setResults = useMapStore((s) => s.setResults)
   const filters = useMapStore((s) => s.filters)
+  const visibleEntityTypes = useMapStore((s) => s.visibleEntityTypes)
   const selectedEntityId = useMapStore((s) => s.selectedEntityId)
   const setSelectedEntityId = useMapStore((s) => s.setSelectedEntityId)
   const layers = useMapStore((s) => s.layers)
+
+  const [heatmapData, setHeatmapData] = useState<FeatureCollection<Point> | null>(null)
 
   const selected = useMemo(
     () => results.find((r) => r.id === selectedEntityId) ?? null,
     [results, selectedEntityId],
   )
+
+  const visibleResults = useMemo(
+    () => results.filter((r) => r.lon != null && r.lat != null && visibleEntityTypes.has(r.entity_type)),
+    [results, visibleEntityTypes],
+  )
+
+  useEffect(() => {
+    if (!layers.newsHeatmap) {
+      setHeatmapData(null)
+      return
+    }
+    let cancelled = false
+    getHeatmap('news_mention', 5)
+      .then((res) => {
+        if (cancelled) return
+        setHeatmapData({
+          type: 'FeatureCollection',
+          features: res.buckets.map((b) => ({
+            type: 'Feature',
+            properties: { count: b.count },
+            geometry: { type: 'Point', coordinates: [b.centroid.lon, b.centroid.lat] },
+          })),
+        })
+      })
+      .catch((err) => {
+        console.error('failed to load news heatmap', err)
+        if (!cancelled) setHeatmapData(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [layers.newsHeatmap])
 
   // Click-to-lookup: run a radius search around the clicked point.
   const handleClick = useCallback(
@@ -75,30 +126,69 @@ export function MapView() {
         })
       }
       onClick={handleClick}
-      mapStyle="mapbox://styles/mapbox/dark-v11"
+      mapStyle={BASE_STYLES[baseStyle]}
+      terrain={layers.terrain ? { source: 'mapbox-dem', exaggeration: 1.5 } : undefined}
       style={{ width: '100%', height: '100%' }}
     >
       <NavigationControl position="top-right" />
 
+      {layers.terrain && (
+        <Source
+          id="mapbox-dem"
+          type="raster-dem"
+          url="mapbox://mapbox.mapbox-terrain-dem-v1"
+          tileSize={512}
+          maxzoom={14}
+        />
+      )}
+
+      {layers.landCover && (
+        <Source id="nlcd-land-cover" type="raster" tiles={[NLCD_WMS_TILE_URL]} tileSize={256}>
+          <Layer id="nlcd-land-cover-layer" type="raster" paint={{ 'raster-opacity': 0.55 }} />
+        </Source>
+      )}
+
+      {layers.newsHeatmap && heatmapData && (
+        <Source id="news-heatmap" type="geojson" data={heatmapData}>
+          <Layer
+            id="news-heatmap-layer"
+            type="heatmap"
+            paint={{
+              'heatmap-weight': ['interpolate', ['linear'], ['get', 'count'], 0, 0, 20, 1],
+              'heatmap-intensity': 1,
+              'heatmap-radius': 30,
+              'heatmap-color': [
+                'interpolate',
+                ['linear'],
+                ['heatmap-density'],
+                0,
+                'rgba(255,92,124,0)',
+                1,
+                '#ff5c7c',
+              ],
+              'heatmap-opacity': 0.7,
+            }}
+          />
+        </Source>
+      )}
+
       {layers.entities &&
-        results
-          .filter((r) => r.lon != null && r.lat != null)
-          .map((r) => (
-            <Marker
-              key={r.id}
-              longitude={r.lon as number}
-              latitude={r.lat as number}
-              onClick={(e) => {
-                e.originalEvent.stopPropagation()
-                setSelectedEntityId(r.id)
-              }}
-            >
-              <div
-                className="h-3 w-3 cursor-pointer rounded-full border-2 border-white"
-                style={{ background: ENTITY_COLORS[r.entity_type] ?? '#7c5cff' }}
-              />
-            </Marker>
-          ))}
+        visibleResults.map((r) => (
+          <Marker
+            key={r.id}
+            longitude={r.lon as number}
+            latitude={r.lat as number}
+            onClick={(e) => {
+              e.originalEvent.stopPropagation()
+              setSelectedEntityId(r.id)
+            }}
+          >
+            <div
+              className="h-3 w-3 cursor-pointer rounded-full border-2 border-white"
+              style={{ background: ENTITY_COLORS[r.entity_type] ?? '#7c5cff' }}
+            />
+          </Marker>
+        ))}
 
       {selected && selected.lon != null && selected.lat != null && (
         <Popup

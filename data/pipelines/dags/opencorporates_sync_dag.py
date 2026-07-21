@@ -24,7 +24,7 @@ DEFAULT_SEARCH_TERMS = ["holdings", "ventures"]
 @dag(
     dag_id="opencorporates_sync",
     description="Syncs OpenCorporates business registrations into research_entities.",
-    schedule="@daily",
+    schedule="@weekly",  # free-tier daily quota is small; weekly keeps us well under it
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
     tags=["ingestion", "opencorporates", "public-records"],

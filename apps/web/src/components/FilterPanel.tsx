@@ -1,26 +1,62 @@
 import { ENTITY_TYPES } from '@/lib/api'
-import { useMapStore } from '@/store/useMapStore'
+import { BASE_STYLES, type BaseStyle, useMapStore } from '@/store/useMapStore'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
-const SOURCES = ['openstreetmap', 'newsapi', 'opencorporates'] as const
+const SOURCES = [
+  'openstreetmap',
+  'newsapi',
+  'opencorporates',
+  'sec_edgar',
+  'census_tiger',
+  'usgs_national_map',
+  'gdelt',
+  'data_gov',
+] as const
+
+const BASE_STYLE_LABELS: Record<BaseStyle, string> = {
+  streets: 'Streets',
+  satellite: 'Satellite',
+  outdoors: 'Outdoors',
+}
 
 export function FilterPanel() {
   const filters = useMapStore((s) => s.filters)
   const setSource = useMapStore((s) => s.setSource)
   const setEntityType = useMapStore((s) => s.setEntityType)
   const resetFilters = useMapStore((s) => s.resetFilters)
+  const baseStyle = useMapStore((s) => s.baseStyle)
+  const setBaseStyle = useMapStore((s) => s.setBaseStyle)
   const layers = useMapStore((s) => s.layers)
   const toggleLayer = useMapStore((s) => s.toggleLayer)
+  const visibleEntityTypes = useMapStore((s) => s.visibleEntityTypes)
+  const toggleEntityTypeVisibility = useMapStore((s) => s.toggleEntityTypeVisibility)
 
   return (
     <div className="space-y-5">
       <div>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Entity type</h3>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Base map</h3>
+        <div className="flex gap-1">
+          {(Object.keys(BASE_STYLES) as BaseStyle[]).map((style) => (
+            <Button
+              key={style}
+              size="sm"
+              variant={baseStyle === style ? 'default' : 'outline'}
+              onClick={() => setBaseStyle(style)}
+              className="flex-1"
+            >
+              {BASE_STYLE_LABELS[style]}
+            </Button>
+          ))}
         </div>
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+          Search: entity type
+        </h3>
         <div className="space-y-2">
           {ENTITY_TYPES.map((type) => (
             <label key={type} className="flex items-center gap-2 text-sm">
@@ -43,22 +79,45 @@ export function FilterPanel() {
                 checked={filters.source === source}
                 onCheckedChange={(checked) => setSource(checked ? source : null)}
               />
-              {source}
+              {source.replace('_', ' ')}
             </label>
           ))}
         </div>
       </div>
 
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Layers</h3>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+          Map layers
+        </h3>
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={layers.entities} onCheckedChange={() => toggleLayer('entities')} />
             Entity markers
           </label>
+          {layers.entities && (
+            <div className="ml-6 space-y-1.5 border-l border-border pl-3">
+              {ENTITY_TYPES.map((type) => (
+                <label key={type} className="flex items-center gap-2 text-xs text-text-muted">
+                  <Checkbox
+                    checked={visibleEntityTypes.has(type)}
+                    onCheckedChange={() => toggleEntityTypeVisibility(type)}
+                  />
+                  {type.replace('_', ' ')}
+                </label>
+              ))}
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={layers.heatmap} onCheckedChange={() => toggleLayer('heatmap')} />
-            Density heatmap
+            <Checkbox checked={layers.newsHeatmap} onCheckedChange={() => toggleLayer('newsHeatmap')} />
+            News density heatmap
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={layers.terrain} onCheckedChange={() => toggleLayer('terrain')} />
+            3D terrain (elevation)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={layers.landCover} onCheckedChange={() => toggleLayer('landCover')} />
+            Land cover (NLCD)
           </label>
         </div>
       </div>

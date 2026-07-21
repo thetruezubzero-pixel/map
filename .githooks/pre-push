@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Enable with: git config core.hooksPath .githooks
+# Final gate before code leaves the machine: secrets, then a full test pass.
+set -uo pipefail
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root" || exit 1
+
+echo "[pre-push] secret scrub (final check)..." >&2
+bash "$repo_root/.claude/hooks/secret-scrub.sh" || exit 2
+
+echo "[pre-push] test gate..." >&2
+bash "$repo_root/.claude/hooks/test-gate.sh" || exit 2
+
+exit 0

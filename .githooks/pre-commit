@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Enable with: git config core.hooksPath .githooks
+set -uo pipefail
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root" || exit 1
+
+echo "[pre-commit] scope guard..." >&2
+bash "$repo_root/.claude/hooks/scope-guard.sh" || exit 2
+
+echo "[pre-commit] secret scrub..." >&2
+bash "$repo_root/.claude/hooks/secret-scrub.sh" || exit 2
+
+echo "[pre-commit] test gate (changed subprojects only)..." >&2
+bash "$repo_root/.claude/hooks/test-gate.sh" || exit 2
+
+exit 0
