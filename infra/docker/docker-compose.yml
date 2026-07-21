@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aether}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-aether}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../data/schemas/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aether}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  gateway:
+    build:
+      context: ../../apps/api/rust/gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}
+      OPERATOR_CONTACT: ${OPERATOR_CONTACT:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      RATE_LIMIT_PER_SECOND: ${RATE_LIMIT_PER_SECOND:-2}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-10}
+      BOT_BLOCKLIST: ${BOT_BLOCKLIST:-}
+      DATABASE_URL: postgres://${POSTGRES_USER:-aether}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aether}
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
