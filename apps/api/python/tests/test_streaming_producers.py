@@ -1,3 +1,4 @@
+from app.streaming.producers.alert_dispatcher import _matches, _matches_keyword, _meets_severity
 from app.streaming.producers.newsapi_stream import _classify_sentiment
 from app.streaming.producers.opencorporates_delta import _record_hash
 from app.streaming.producers.osm_changesets import _classify
@@ -51,3 +52,35 @@ def test_osm_classify_falls_back_to_removed_when_only_deletions():
 
 def test_osm_classify_falls_back_to_added_by_default():
     assert _classify("misc edits", created=1, deleted=0) == "POI_ADDED"
+
+
+def test_meets_severity_ordinal_comparison():
+    assert _meets_severity("CRITICAL", "WARNING") is True
+    assert _meets_severity("INFO", "WARNING") is False
+    assert _meets_severity("WARNING", "WARNING") is True
+
+
+def test_matches_keyword_case_insensitive_substring():
+    pattern = {"title": "Rapid filing activity: Acme Corp", "description": "2 filings for CIK 123"}
+    assert _matches_keyword({"keywords": ["acme"]}, pattern) is True
+    assert _matches_keyword({"keywords": ["nonexistent"]}, pattern) is False
+
+
+def test_matches_entity_subscription_by_cik():
+    sub = {"subscription_type": "entity", "criteria": '{"cik": "123"}'}
+    assert _matches(sub, {"cik": "123", "entity_name": None}) is True
+    assert _matches(sub, {"cik": "456", "entity_name": None}) is False
+
+
+def test_matches_composite_requires_all_present_checks():
+    sub = {"subscription_type": "composite", "criteria": {"cik": "123", "keywords": ["merger"]}}
+    both_match = {"cik": "123", "entity_name": None, "title": "merger announced", "description": ""}
+    only_cik_matches = {"cik": "123", "entity_name": None, "title": "unrelated headline", "description": ""}
+    assert _matches(sub, both_match) is True
+    assert _matches(sub, only_cik_matches) is False
+
+
+def test_matches_geofence_never_matches_yet():
+    # Documented limitation: detected_patterns carries no lat/lon today.
+    sub = {"subscription_type": "geofence", "criteria": {"lat": 40.7, "lon": -74.0, "radius_km": 5}}
+    assert _matches(sub, {"cik": "123"}) is False

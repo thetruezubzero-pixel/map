@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list(allowed_origins))
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
     let state = AppState::new(config, db);
@@ -54,10 +54,22 @@ async fn main() -> anyhow::Result<()> {
         .route("/search", get(routes::search::search))
         .route("/entities/:id", get(routes::entities::get_entity))
         .route("/research", post(routes::research::create_research_job))
+        .route(
+            "/subscriptions",
+            get(routes::subscriptions::list_subscriptions).post(routes::subscriptions::create_subscription),
+        )
+        .route(
+            "/subscriptions/:id",
+            get(routes::subscriptions::get_subscription)
+                .patch(routes::subscriptions::update_subscription)
+                .delete(routes::subscriptions::delete_subscription),
+        )
         .route_layer(from_fn_with_state(state.clone(), middleware::rate_limit::rate_limit));
 
     let app = Router::new()
         .route("/health", get(routes::health::health))
+        .route("/health/streaming", get(routes::health_streaming::health_streaming))
+        .route("/ws/alerts", get(routes::alerts_ws::ws_alerts))
         .merge(rate_limited)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

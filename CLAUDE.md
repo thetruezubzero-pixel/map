@@ -16,16 +16,20 @@ scope boundaries.
 
 ```
 apps/
-  gateway/          Rust/Axum API gateway (geocode, search, entities, research proxy)
+  gateway/          Rust/Axum API gateway (geocode, search, entities, research proxy,
+                      alert subscriptions CRUD, /ws/alerts, /health/streaming)
   web/               React 19 + Vite + TS frontend (Mapbox GL, Tailwind, shadcn/ui, Zustand, D3)
   api/python/        FastAPI service
     app/agents/      Multi-agent research orchestration (OpenRouter)
     app/graph/       Entity resolution (dedup/confidence scoring) + graph queries
     app/search/      Qdrant / Redis Search / Elasticsearch (hybrid search + ES|QL aggregations)
     app/routers/     research, graph, analytics, health endpoints
+    app/streaming/   Kafka producers (SEC EDGAR, OpenCorporates, NewsAPI/GDELT, OSM)
+                      + the alert dispatcher (Flink output -> per-user alerts)
 data/
   pipelines/         Airflow DAGs: OSM, NewsAPI, OpenCorporates, SEC EDGAR, Census,
                       USGS, GDELT, Data.gov, entity resolution, Elasticsearch sync
+streaming/           Kafka Avro schemas, ksqlDB statements, Flink CEP job -- see streaming/README.md
 .claude/agents/      Claude Code subagent definitions (frontend-qa, api-reviewer, ...)
 .claude/hooks/       SubagentStop hook scripts (scope-guard, secret-scrub, test-gate)
 .githooks/           Same checks as git-native pre-commit/pre-push/post-merge hooks

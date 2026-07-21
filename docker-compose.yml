@@ -151,8 +151,30 @@ services:
       NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:?set a real contact -- Nominatim blocks placeholder domains}
       JWT_SECRET: ${JWT_SECRET:?set a real random secret -- the previous default was a well-known string committed to this public repo, making tokens forgeable}
       PYTHON_API_BASE_URL: http://python-api:8000
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8082
+      KSQLDB_URL: http://ksqldb:8088
+      FLINK_REST_URL: http://flink-jobmanager:8081
     ports:
       - "8080:8080"
+
+  alert-dispatcher:
+    # Task 28 -- bridges Flink's raw aether.detected_patterns to real
+    # per-user rows in Postgres user_alerts (which /ws/alerts listens to
+    # via LISTEN/NOTIFY) and to aether.user_alerts on Kafka. See
+    # apps/api/python/app/streaming/producers/alert_dispatcher.py and
+    # streaming/README.md for why this isn't done in ksqlDB or Flink
+    # directly.
+    build: ./apps/api/python
+    restart: unless-stopped
+    command: python -m app.streaming.producers.alert_dispatcher
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://aether:aether@postgres:5432/aether
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8082
 
   python-api:
     build: ./apps/api/python

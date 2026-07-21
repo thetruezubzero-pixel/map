@@ -13,6 +13,10 @@ pub struct Config {
     pub rate_limit_burst: u32,
     pub rate_limit_per_sec: u32,
     pub authed_rate_limit_per_sec: u32,
+    pub kafka_bootstrap_servers: String,
+    pub schema_registry_url: String,
+    pub ksqldb_url: String,
+    pub flink_rest_url: String,
 }
 
 impl Config {
@@ -58,6 +62,13 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(5),
+            kafka_bootstrap_servers: env::var("KAFKA_BOOTSTRAP_SERVERS")
+                .unwrap_or_else(|_| "localhost:9092".to_string()),
+            schema_registry_url: env::var("SCHEMA_REGISTRY_URL")
+                .unwrap_or_else(|_| "http://localhost:8082".to_string()),
+            ksqldb_url: env::var("KSQLDB_URL").unwrap_or_else(|_| "http://localhost:8088".to_string()),
+            flink_rest_url: env::var("FLINK_REST_URL")
+                .unwrap_or_else(|_| "http://localhost:8081".to_string()),
         }
     }
 }

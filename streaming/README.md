@@ -214,6 +214,53 @@ plan) uses the system Python unless `-pyclientexec` is also set.
   sole producer of that topic, so it should be the sole registrar of its
   schema.
 
+## Alert dispatch + delivery (Task 28)
+
+Closes the loop from Flink's raw `aether.detected_patterns` to a real
+alert a specific user actually sees, live-verified end to end (SEC EDGAR
+producer -> Kafka -> Flink CEP -> `aether.detected_patterns` ->
+dispatcher -> Postgres `user_alerts` -> WebSocket, delivered ~0.4s after
+the dispatcher's INSERT):
+
+- **`apps/gateway/migrations/0007_alerts.sql`** -- `user_subscriptions`
+  (entity/keyword/geofence/composite criteria, min severity, channels)
+  and `user_alerts` (durable, queryable delivery record). An
+  `AFTER INSERT` trigger on `user_alerts` calls `pg_notify` so the
+  gateway's WebSocket doesn't need to poll.
+- **`apps/api/python/app/streaming/producers/alert_dispatcher.py`** --
+  consumes `aether.detected_patterns`, matches against active
+  `user_subscriptions` rows, and for each match INSERTs into
+  `user_alerts` (the real delivery path) and publishes the same event to
+  `aether.user_alerts` on Kafka (for parity/any future non-HTTP
+  consumer). Geofence criteria never matches today -- `detected_patterns`
+  carries no lat/lon (see the CEP job's docstring); entity and keyword
+  matching are real and tested against live data.
+- **Rust gateway** (`apps/gateway/src/routes/`):
+  - `subscriptions.rs` -- full CRUD, hard JWT-required (`require_user_id`,
+    401 if missing/invalid -- unlike `/research`'s optional auth, a
+    subscription is inherently per-user).
+  - `alerts_ws.rs` -- `GET /ws/alerts?token=<jwt>` holds a
+    `sqlx::postgres::PgListener` on `user_alerts_channel` for the
+    connection's lifetime and pushes matching rows as JSON. Token is a
+    query param, not the `Authorization` header, because browsers can't
+    set custom headers during a WS handshake -- see the doc comment on
+    `require_user_id_from_query` for the logging/history tradeoff that
+    comes with that.
+  - `health_streaming.rs` -- `GET /health/streaming`: Kafka
+    topic/partition metadata + per-topic message counts (via `rdkafka`,
+    dynamically linked against the system `librdkafka-dev` -- see
+    `Cargo.toml`/`Dockerfile`), Flink job/checkpoint overview (its REST
+    API), ksqlDB and Schema Registry reachability. Deliberately **not**
+    full per-consumer-group lag -- there's no single canonical consumer
+    group across ksqlDB/Flink/the Python producers/the dispatcher to
+    report lag for, so this reports topic message counts (a real,
+    honest "is data flowing" signal) instead of a fabricated lag number.
+
+Own-venv note: `alert_dispatcher.py` runs in `apps/api/python`'s regular
+venv (unlike the Flink job) -- it only needs `asyncpg` (already a
+dependency there) plus the existing `kafka_client` module, no new
+heavyweight dependency.
+
 ### Measured latency (not sub-500ms -- documented honestly)
 
 The original ask was sub-500ms source-to-alert latency. Live measurement
