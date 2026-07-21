@@ -10,7 +10,8 @@ import Map, {
 import type { FeatureCollection, Point } from 'geojson'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { BASE_STYLES, useMapStore } from '@/store/useMapStore'
-import { getHeatmap, search } from '@/lib/api'
+import { useAlertStore } from '@/store/useAlertStore'
+import { getHeatmap, search, type AlertSeverity } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ?? ''
@@ -21,6 +22,12 @@ const ENTITY_COLORS: Record<string, string> = {
   location: '#f5a623',
   poi: '#f5a623',
   news_mention: '#ff5c7c',
+}
+
+const ALERT_SEVERITY_COLORS: Record<AlertSeverity, string> = {
+  INFO: '#5cb8ff',
+  WARNING: '#f5a623',
+  CRITICAL: '#ff3b3b',
 }
 
 // MRLC's public WMS (see apps/api/python/app/search/elasticsearch_setup.py
@@ -46,8 +53,14 @@ export function MapView() {
   const selectedEntityId = useMapStore((s) => s.selectedEntityId)
   const setSelectedEntityId = useMapStore((s) => s.setSelectedEntityId)
   const layers = useMapStore((s) => s.layers)
+  const alerts = useAlertStore((s) => s.alerts)
 
   const [heatmapData, setHeatmapData] = useState<FeatureCollection<Point> | null>(null)
+
+  const geolocatedAlerts = useMemo(
+    () => alerts.filter((a) => a.lat != null && a.lon != null),
+    [alerts],
+  )
 
   const selected = useMemo(
     () => results.find((r) => r.id === selectedEntityId) ?? null,
@@ -193,6 +206,17 @@ export function MapView() {
             <div
               className="h-3 w-3 cursor-pointer rounded-full border-2 border-white"
               style={{ background: ENTITY_COLORS[r.entity_type] ?? '#7c5cff' }}
+            />
+          </Marker>
+        ))}
+
+      {layers.alerts &&
+        geolocatedAlerts.map((alert) => (
+          <Marker key={alert.id} longitude={alert.lon as number} latitude={alert.lat as number}>
+            <div
+              title={`${alert.severity}: ${alert.title}`}
+              className="h-3.5 w-3.5 animate-pulse cursor-pointer rounded-full border-2 border-white"
+              style={{ background: ALERT_SEVERITY_COLORS[alert.severity] }}
             />
           </Marker>
         ))}

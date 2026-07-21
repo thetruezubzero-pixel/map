@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: env.GATEWAY_PROXY_TARGET ?? 'http://localhost:8080',
           changeOrigin: true,
+          ws: true, // GET /ws/alerts -- without this the dev proxy drops the WS upgrade
           rewrite: (p) => p.replace(/^\/api/, ''),
         },
         '/py-api': {

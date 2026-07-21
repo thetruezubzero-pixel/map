@@ -119,6 +119,10 @@ export function FilterPanel() {
             <Checkbox checked={layers.landCover} onCheckedChange={() => toggleLayer('landCover')} />
             Land cover (NLCD)
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={layers.alerts} onCheckedChange={() => toggleLayer('alerts')} />
+            Alert pins
+          </label>
         </div>
       </div>
 

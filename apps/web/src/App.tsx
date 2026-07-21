@@ -4,7 +4,10 @@ import { FilterPanel, DateRangeInputs } from '@/components/FilterPanel'
 import { TimelineScrubber } from '@/components/TimelineScrubber'
 import { ResearchPanel } from '@/components/ResearchPanel'
 import { EntityDetailPanel } from '@/components/EntityDetailPanel'
+import { AlertPanel } from '@/components/AlertPanel'
+import { SystemHealthPanel } from '@/components/SystemHealthPanel'
 import { useMapStore } from '@/store/useMapStore'
+import { useAlertStore } from '@/store/useAlertStore'
 
 // mapbox-gl is a ~1.8MB chunk (dominates initial load -- see audit: it
 // alone accounted for most of the ~3.6s TTI measured on throttled 3G).
@@ -16,6 +19,7 @@ function App() {
   const results = useMapStore((s) => s.results)
   const selectedEntityId = useMapStore((s) => s.selectedEntityId)
   const setSelectedEntityId = useMapStore((s) => s.setSelectedEntityId)
+  const unreadAlertCount = useAlertStore((s) => s.unreadCount)
 
   return (
     <div className="flex h-screen flex-col bg-background text-text">
@@ -24,6 +28,14 @@ function App() {
         <div className="w-full max-w-xl">
           <SearchBar />
         </div>
+        {unreadAlertCount > 0 && (
+          <span
+            className="ml-auto shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-white"
+            title={`${unreadAlertCount} unread alert${unreadAlertCount === 1 ? '' : 's'}`}
+          >
+            {unreadAlertCount} alert{unreadAlertCount === 1 ? '' : 's'}
+          </span>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1 print:block">
@@ -34,6 +46,12 @@ function App() {
           </div>
           <div className="mt-5">
             <ResearchPanel />
+          </div>
+          <div className="mt-5 border-t border-border pt-5">
+            <AlertPanel />
+          </div>
+          <div className="mt-5 border-t border-border pt-5">
+            <SystemHealthPanel />
           </div>
         </aside>
 

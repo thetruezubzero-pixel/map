@@ -23,7 +23,11 @@ async function requestFrom<T>(base: string, path: string, init?: RequestInit): P
     throw new ApiError(body.error ?? body.detail ?? res.statusText, res.status)
   }
 
-  return res.json() as Promise<T>
+  // DELETE /subscriptions/:id (and any other 200/204-with-empty-body
+  // response) has no JSON to parse -- res.json() on an empty body throws
+  // "Unexpected end of JSON input" rather than returning undefined.
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -178,6 +182,117 @@ export function getNearby(
   const params = new URLSearchParams({ lat: String(lat), lon: String(lon), radius_km: String(radiusKm) })
   if (entityType) params.set('entity_type', entityType)
   return pyRequest(`/analytics/nearby?${params.toString()}`)
+}
+
+// --- Phase 4: alert subscriptions + streaming health ---
+// Unlike /research, these are hard-JWT-required by the gateway (401
+// without a token) -- see apps/gateway/src/middleware/auth.rs
+// require_user_id. There is no login/signup flow anywhere in this app
+// yet (no users table, no /login endpoint) -- the token has to come from
+// somewhere else (an ops-issued JWT signed with the same JWT_SECRET the
+// gateway uses). AlertPanel below just asks the user to paste one in;
+// that is a real, documented gap, not a stand-in for a real auth flow.
+
+export const SUBSCRIPTION_TYPES = ['entity', 'keyword', 'geofence', 'composite'] as const
+export type SubscriptionType = (typeof SUBSCRIPTION_TYPES)[number]
+
+export const ALERT_SEVERITIES = ['INFO', 'WARNING', 'CRITICAL'] as const
+export type AlertSeverity = (typeof ALERT_SEVERITIES)[number]
+
+export interface Subscription {
+  id: string
+  user_id: string
+  subscription_type: SubscriptionType
+  criteria: Record<string, unknown>
+  min_severity: AlertSeverity
+  channels: string[]
+  webhook_url: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateSubscriptionInput {
+  subscription_type: SubscriptionType
+  criteria: Record<string, unknown>
+  min_severity?: AlertSeverity
+  channels?: string[]
+  webhook_url?: string | null
+}
+
+function authHeaders(token: string): HeadersInit {
+  return { Authorization: `Bearer ${token}` }
+}
+
+export function listSubscriptions(token: string): Promise<Subscription[]> {
+  return request<Subscription[]>('/subscriptions', { headers: authHeaders(token) })
+}
+
+export function createSubscription(token: string, input: CreateSubscriptionInput): Promise<Subscription> {
+  return request<Subscription>('/subscriptions', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateSubscription(
+  token: string,
+  id: string,
+  patch: Partial<Pick<Subscription, 'criteria' | 'min_severity' | 'channels' | 'webhook_url' | 'is_active'>>,
+): Promise<Subscription> {
+  return request<Subscription>(`/subscriptions/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify(patch),
+  })
+}
+
+export function deleteSubscription(token: string, id: string): Promise<void> {
+  return request<void>(`/subscriptions/${id}`, { method: 'DELETE', headers: authHeaders(token) })
+}
+
+export interface AlertMessage {
+  id: string
+  subscription_id: string
+  user_id: string
+  severity: AlertSeverity
+  title: string
+  description: string
+  source_topic: string
+  source_event_id: string | null
+  entity_id: string | null
+  lat: number | null
+  lon: number | null
+  channels: string[]
+  created_at: string
+}
+
+/** Builds the ws(s):// URL for GET /ws/alerts from the same GATEWAY_URL
+ * used for HTTP requests -- handles both a relative dev-proxy path
+ * (/api) and an absolute gateway URL, and always matches the page's
+ * own protocol (ws under http, wss under https). */
+export function alertsWebSocketUrl(token: string): string {
+  const base = new URL(GATEWAY_URL, window.location.origin)
+  const wsProtocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
+  const path = `${base.pathname.replace(/\/$/, '')}/ws/alerts`
+  return `${wsProtocol}//${base.host}${path}?token=${encodeURIComponent(token)}`
+}
+
+export interface StreamingHealth {
+  status: string
+  kafka: {
+    reachable: boolean
+    error?: string
+    topics?: { topic: string; found: boolean; partition_count?: number; message_count?: number }[]
+  }
+  schema_registry: { reachable: boolean }
+  ksqldb: { reachable: boolean }
+  flink: { reachable: boolean; jobs?: { jobs: { jid: string; state: string; name: string }[] } }
+}
+
+export function getStreamingHealth(): Promise<StreamingHealth> {
+  return request<StreamingHealth>('/health/streaming')
 }
 
 // --- Export helpers (client-side, no backend round trip) ---
