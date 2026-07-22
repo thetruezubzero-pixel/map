@@ -4,3 +4,8 @@ psycopg2-binary==2.9.10
 edgartools==5.43.0
 asyncpg==0.30.0
 elasticsearch==8.17.0
+
+# Phase 6 (project_architect_cycle_dag.py) -- mints a short-lived JWT to
+# call the JWT-gated POST /architect/run, same HS256/JWT_SECRET this repo
+# already uses elsewhere (apps/gateway/src/middleware/auth.rs, app/auth.py).
+PyJWT==2.10.1

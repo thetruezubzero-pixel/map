@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     agent_swarm_enabled: bool = True
     heirloom_device_key: str = ""  # AES-256-GCM key for heirloom_sync.py; empty disables heirloom export
 
+    # The Architect (Phase 5b) -- see app/agent_swarm/introspection.py and
+    # app/agent_swarm/services/architect_committer.py. project_root must
+    # point at a real git working tree (docker-compose mounts the repo
+    # itself in dev) for introspection and the commit/PR pipeline to work;
+    # absent that mount, snapshot-building degrades to DB-only and the
+    # commit step raises a clear error rather than failing silently.
+    project_root: str = "/repo"
+    github_token: str = ""  # fine-grained PAT, contents:write + pull_requests:write on this repo only; empty disables the commit/PR step
+    github_repo: str = "thetruezubzero-pixel/map"
+    architect_auto_commit_enabled: bool = True
+    jwt_secret: str = ""  # must match the gateway's JWT_SECRET; required to verify POST /architect/run callers
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

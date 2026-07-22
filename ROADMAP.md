@@ -175,6 +175,61 @@ frontend for the dashboard.
   is a placeholder, the same limitation already documented for
   OpenCorporates/NewsAPI in earlier phases.
 
+## Phase 5b (built) -- the Architect
+
+Extends the Phase 5 swarm with a 4th agent role, `project_architect`,
+that introspects the project itself rather than researching public
+records. See `apps/api/python/app/agent_swarm/introspection.py`,
+`app/agents/project_architect.py`, and
+`app/agent_swarm/services/architect_committer.py`.
+
+- **The "digital twin"**: `project_snapshots` -- a structured, real
+  snapshot of the project's own state (DB counts, DAG/route inventory,
+  ROADMAP.md's phase status and non-goals, recent git log), built by
+  live introspection, never hallucinated by the LLM.
+- **The plan**: `project_plans` -- `project_architect` produces a ranked
+  list of next steps from one snapshot, each item citing the specific
+  snapshot fact that motivates it.
+- **The one bounded autonomous-commit exception**: the architect may
+  write exactly one file, `PROJECT_PLAN.md`, to a dedicated
+  `agent/architect/...` branch, and open a real PR. It never merges.
+  This is deliberately consistent with, not an exception to, Phase 5's
+  own stated boundary (`0008_agent_swarm.sql`: "No autonomous action ...
+  never a mutation applied without human review") -- landing in `main`
+  always goes through the same human/CI-gated PR review every other
+  change in this repo does, including the architect's own.
+  `architect_committer.py`'s `_assert_never_main` makes a direct push to
+  `main` structurally impossible, called before every push and again
+  immediately before the PR is opened. Every action (branch created,
+  committed, pushed, PR opened, or skipped/failed and why) is written to
+  `project_plan_actions`, append-only at the DB level like
+  `agent_audit_log`.
+- **Growth within the existing swarm, not a parallel system**: registered
+  in `agent_registry` like any other role; can graduate `amateur` ->
+  `actuarial` under the same 90%-accuracy/50-consecutive-successes rule.
+  Every action is written to `agent_audit_log` via the same `Agent.audit()`
+  base method the other 3 agents use.
+- Runs on a daily Airflow DAG (`project_architect_cycle_dag.py`) rather
+  than a bespoke scheduler -- python-api has none of its own.
+  `POST /architect/run` is the one route in this feature gated behind
+  JWT (`app/auth.py`): it's reachable unauthenticated via web's nginx
+  `/py-api/` proxy otherwise, same as every python-api route (see
+  CLAUDE.md), and this one can trigger a real commit + PR, so it
+  verifies the token itself rather than trusting the gateway already did.
+- `GITHUB_TOKEN` (a fine-grained PAT scoped to *only* this repo, with
+  *only* Contents and Pull-requests permissions -- never anything that
+  could merge) and `ARCHITECT_AUTO_COMMIT_ENABLED` (default `true`, a
+  kill switch independent of the token) gate the commit/PR step
+  specifically. Snapshotting and planning work with no token at all --
+  visible on `/architect` either way.
+- Not done, flagged rather than silently omitted: `safe_to_autoimplement`
+  is currently restricted, by construction, to `PROJECT_PLAN.md` only --
+  the architecture doesn't prevent widening that allowlist once there's
+  a track record of reviewed, merged PRs (the same shadow-mode ->
+  graduation trust-building pattern Phase 5 already uses for amateur
+  agents), but that widening is a future, separate decision, not
+  something this phase does on its own.
+
 ## Phase 6 (future, needs credentials/legal review)
 
 - County assessor, PACER ingestion (still business/property records —

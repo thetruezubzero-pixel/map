@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.tsx'
 import { AgentDetailPage } from '@/pages/AgentDetailPage'
 import { AgentsPage } from '@/pages/AgentsPage'
+import { ArchitectPage } from '@/pages/ArchitectPage'
 import { HeirloomsPage } from '@/pages/HeirloomsPage'
 import { SwarmPage } from '@/pages/SwarmPage'
 import { TrainingPage } from '@/pages/TrainingPage'
@@ -19,6 +20,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/swarm" element={<SwarmPage />} />
         <Route path="/training" element={<TrainingPage />} />
         <Route path="/heirlooms" element={<HeirloomsPage />} />
+        <Route path="/architect" element={<ArchitectPage />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

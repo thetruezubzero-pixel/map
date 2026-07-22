@@ -23,11 +23,13 @@ apps/
     app/agents/      Multi-agent research orchestration (OpenRouter)
     app/graph/       Entity resolution (dedup/confidence scoring) + graph queries
     app/search/      Qdrant / Redis Search / Elasticsearch (hybrid search + ES|QL aggregations)
-    app/routers/     research, graph, analytics, health endpoints
+    app/routers/     research, graph, analytics, health, agent_swarm, architect endpoints
     app/streaming/   Kafka producers (SEC EDGAR, OpenCorporates, NewsAPI/GDELT, OSM)
                       + the alert dispatcher (Flink output -> per-user alerts)
     app/agent_swarm/ Weighted multi-agent swarm: credit assignment, consensus
-                      voting, prompt-level distillation, heirloom persistence
+                      voting, prompt-level distillation, heirloom persistence,
+                      project introspection + the Architect's commit/PR pipeline
+    app/auth.py      JWT verification for the one python-api route that needs it
 data/
   pipelines/         Airflow DAGs: OSM, NewsAPI, OpenCorporates, SEC EDGAR, Census,
                       USGS, GDELT, Data.gov, entity resolution, Elasticsearch sync
@@ -70,6 +72,16 @@ docker-compose.yml   Full local dev stack
   IPFS/blockchain infrastructure without explicit authorization -- it
   spends real money (gas fees) and needs real private-key handling. See
   ROADMAP.md Phase 7.
+- The `project_architect` agent (`apps/api/python/app/agent_swarm/
+  services/architect_committer.py`) may only ever write
+  `PROJECT_PLAN.md`. It must never touch `ROADMAP.md` or `CLAUDE.md`
+  themselves -- both stay human-owned, including this file and
+  ROADMAP.md's "Explicit non-goals" section. It must never push to or
+  merge `main` -- `architect_committer.py`'s `_assert_never_main` guard
+  and its branch-then-PR-only flow are load-bearing, not incidental; do
+  not add a path that merges on the architect's behalf without a written
+  scope decision in ROADMAP.md, per the same norm as every other
+  guardrail in this section. See ROADMAP.md "Phase 5b: the Architect".
 
 ## Architecture / trust boundaries
 
@@ -78,7 +90,13 @@ docker-compose.yml   Full local dev stack
   it's reachable only via the docker network, from `gateway` (proxies
   `/research`) and `web`'s nginx (proxies `/py-api/` for graph +
   analytics). If you add a new consumer of `python-api`, route it through
-  one of those two, don't expose `python-api` directly.
+  one of those two, don't expose `python-api` directly. Note that `web`'s
+  `/py-api/` proxy exposes python-api's *entire* route surface with no
+  auth check of its own -- a route cannot rely on "the gateway already
+  verified this" for that reason. `POST /architect/run` is the one route
+  that verifies its own JWT (`app/auth.py`) instead of assuming the
+  gateway did, because it can trigger a real autonomous git commit + PR;
+  match that pattern for any future route with real side effects.
 - **`JWT_SECRET` must be set explicitly** in any environment reachable
   outside your own machine (`docker-compose.yml` now requires it via
   `${JWT_SECRET:?...}`). The old default (`dev-only-insecure-secret`) is
