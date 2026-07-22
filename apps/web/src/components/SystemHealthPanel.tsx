@@ -5,7 +5,13 @@ import { Badge } from '@/components/ui/badge'
 const POLL_INTERVAL_MS = 15_000
 
 function Dot({ ok }: { ok: boolean }) {
-  return <span className={`inline-block h-2 w-2 rounded-full ${ok ? 'bg-accent-2' : 'bg-red-500'}`} />
+  return (
+    <span
+      className={`inline-block h-2 w-2 rounded-full ${ok ? 'bg-accent-2' : 'bg-red-500'}`}
+      role="status"
+      aria-label={ok ? 'reachable' : 'unreachable'}
+    />
+  )
 }
 
 /** GET /health/streaming display -- Kafka topic activity, Flink job

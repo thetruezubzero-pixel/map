@@ -38,7 +38,11 @@ export function ResearchPanel() {
       <Button size="sm" className="w-full" disabled={loading} onClick={submit}>
         {loading ? 'Queuing…' : 'Start research job'}
       </Button>
-      {status && <p className="text-xs text-text-muted">{status}</p>}
+      {status && (
+        <p className="text-xs text-text-muted" role="alert">
+          {status}
+        </p>
+      )}
       {jobId && <p className="truncate text-xs text-text-muted">job: {jobId}</p>}
       <p className="text-[11px] text-text-muted">
         Business/property records only. Every job queues for human review before finalization.

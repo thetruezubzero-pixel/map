@@ -60,8 +60,10 @@ below).
   aggregation, and ES|QL `STATS...BY` queries
   (`apps/api/python/app/search/elasticsearch_setup.py`), synced from
   Postgres by the `elasticsearch_sync` DAG. ENRICH spatial joins against
-  census-tract/zoning polygons are **not** implemented — there's no
-  polygon boundary layer yet, only points.
+  census-tract/zoning polygons are **not** implemented — Phase 6 added
+  the polygon boundary layer (`research_entity_boundaries`) this would
+  join against, but wiring an actual ES ENRICH policy is still a
+  separate, unbuilt task.
 - Frontend: base-style switcher, per-entity-type layer visibility, a
   news-density heatmap layer, a Mapbox-native 3D terrain layer, an NLCD
   land-cover overlay (MRLC public WMS), a D3 force-directed entity graph
@@ -76,11 +78,12 @@ Known gaps, called out rather than papered over:
 - `data_gov_search_sync` is written against the documented CKAN API, but
   `catalog.data.gov`'s classic API currently 404s (the site was
   restructured); the DAG fails soft until that's fixed upstream.
-- No transit (GTFS) layer — Data.gov's current inaccessibility and the
-  absence of a GTFS-parsing DAG mean this wasn't built, not just toggled
-  off.
-- No demographics-by-tract choropleth or parcel/zoning polygon layer —
-  same root cause: no polygon boundary data ingested yet.
+- ~~No transit (GTFS) layer~~ — built in Phase 6 (`gtfs_transit_sync`).
+- ~~No demographics-by-tract choropleth or parcel/zoning polygon layer~~
+  — the polygon boundary data and the frontend choropleth layer were
+  both built in Phase 6; an actual ES ENRICH policy joining against it
+  is the one piece still not wired (see Phase 3's Elasticsearch bullet
+  above).
 - "Business markers sized by revenue" wasn't implemented — none of the
   free sources in this phase expose revenue data.
 - Qdrant and Redis Search (`apps/api/python/app/search/qdrant_setup.py`,
@@ -230,12 +233,25 @@ records. See `apps/api/python/app/agent_swarm/introspection.py`,
   agents), but that widening is a future, separate decision, not
   something this phase does on its own.
 
-## Phase 6 (future, needs credentials/legal review)
+## Phase 6 (partially built; remainder needs credentials/legal review)
 
+- **Built**: GTFS transit feeds (`gtfs_transit_sync` -- static stop data,
+  no schema change, lands in `research_entities` like any other point
+  source) and real census-tract/zoning polygon ingestion
+  (`census_tract_boundary_sync`, `zoning_districts_sync`), storing actual
+  polygon geometry -- not just centroids -- in a new
+  `research_entity_boundaries` table
+  (`apps/gateway/migrations/0010_entity_boundaries.sql`) with a GIST index
+  for `ST_Intersects` point-in-polygon joins, exposed via `GET
+  /boundaries`. This unlocks the spatial-join/choropleth groundwork this
+  item originally called for; a frontend choropleth layer consuming it is
+  still a separate, unbuilt task. Only one seed source is wired per
+  boundary type so far (NYC DCP zoning, Census tracts for NYC/SF
+  counties) -- extending coverage means adding more seed
+  counties/bboxes/agencies, following the existing DAG pattern, not new
+  architecture.
 - County assessor, PACER ingestion (still business/property records —
   requires credentialing and a legal review of each source's ToS)
-- GTFS transit feeds, census-tract/zoning polygon ingestion (unlocks
-  ENRICH spatial joins and choropleth layers)
 - Flink JDBC connector once a Flink-2.x-compatible release exists (would
   replace the Postgres-side alert_dispatcher.py matching step with a live
   join inside Flink itself)

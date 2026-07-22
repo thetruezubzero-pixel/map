@@ -37,6 +37,21 @@ describe('useMapStore', () => {
     expect(after.entities).toBe(before.entities)
   })
 
+  it('censusTracts and zoningDistricts layers default off and toggle independently', () => {
+    expect(useMapStore.getState().layers.censusTracts).toBe(false)
+    expect(useMapStore.getState().layers.zoningDistricts).toBe(false)
+
+    useMapStore.getState().toggleLayer('censusTracts')
+    expect(useMapStore.getState().layers.censusTracts).toBe(true)
+    expect(useMapStore.getState().layers.zoningDistricts).toBe(false)
+
+    useMapStore.getState().toggleLayer('zoningDistricts')
+    expect(useMapStore.getState().layers.zoningDistricts).toBe(true)
+
+    useMapStore.getState().toggleLayer('censusTracts')
+    useMapStore.getState().toggleLayer('zoningDistricts')
+  })
+
   it('toggleEntityTypeVisibility removes and re-adds a type', () => {
     expect(useMapStore.getState().visibleEntityTypes.has('business')).toBe(true)
 

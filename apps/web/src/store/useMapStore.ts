@@ -39,6 +39,10 @@ interface Layers {
    * carry lat/lon render; most don't yet, see AlertPanel's geofence
    * caveat. */
   alerts: boolean
+  /** Phase 6 choropleth: research_entity_boundaries polygons, fetched
+   * bbox-scoped from GET /boundaries as the map moves. */
+  censusTracts: boolean
+  zoningDistricts: boolean
 }
 
 interface MapState {
@@ -107,6 +111,14 @@ export const useMapStore = create<MapState>((set) => ({
   selectedEntityId: null,
   setSelectedEntityId: (selectedEntityId) => set({ selectedEntityId }),
 
-  layers: { entities: true, newsHeatmap: false, terrain: false, landCover: false, alerts: true },
+  layers: {
+    entities: true,
+    newsHeatmap: false,
+    terrain: false,
+    landCover: false,
+    alerts: true,
+    censusTracts: false,
+    zoningDistricts: false,
+  },
   toggleLayer: (layer) => set((s) => ({ layers: { ...s.layers, [layer]: !s.layers[layer] } })),
 }))

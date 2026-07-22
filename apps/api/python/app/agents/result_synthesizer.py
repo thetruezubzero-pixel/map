@@ -32,6 +32,9 @@ class ResultSynthesizerAgent(Agent):
     chronological timeline, and a corporate parent/subsidiary graph where
     the data supports it. NO personal relationship mapping, NO individual
     dossiers. Every report queues for human review before finalization.
+
+    Not done, flagged rather than silently omitted: "where the data
+    supports it" currently means never -- see _build_relationships.
     """
 
     name = "result_synthesizer"
@@ -108,7 +111,19 @@ class ResultSynthesizerAgent(Agent):
         """Corporate parent/subsidiary graph only, derived from
         OpenCorporates metadata when present. Never applied to
         news_mention or location records, which have no ownership
-        semantics."""
+        semantics.
+
+        Currently always returns [] in practice: data_retriever.py's
+        _fetch_opencorporates only calls OpenCorporates' company *search*
+        endpoint, whose response never includes parent/controlling-entity
+        data (that's only on their per-company *detail* endpoint, which
+        nothing here calls) -- confirmed live, `metadata["parent_company"]`
+        is set nowhere in this codebase. Wiring a real signal would mean
+        an extra live HTTP call per business record (a real rate-limit/
+        cost tradeoff, and OpenCorporates' free tier has separately been
+        confirmed to no longer work at all as of this repo's current
+        state -- see opencorporates_sync_dag.py), so this is left as a
+        real, flagged gap rather than a guessed-at fix."""
         relationships: list[EntityRelationship] = []
         businesses = [r for r in records if r.entity_type == EntityType.business]
 

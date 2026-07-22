@@ -240,6 +240,7 @@ export function AlertPanel() {
         ))}
         {availableSources.length > 0 && (
           <select
+            aria-label="Filter alerts by source"
             value={sourceFilter ?? ''}
             onChange={(e) => setSourceFilter(e.target.value || null)}
             className="h-8 rounded-md border border-border bg-surface px-2 text-[11px] text-text"

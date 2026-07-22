@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/geocode", get(routes::geocode::geocode))
         .route("/search", get(routes::search::search))
         .route("/entities/:id", get(routes::entities::get_entity))
+        .route("/boundaries", get(routes::boundaries::list_boundaries))
         .route("/research", post(routes::research::create_research_job))
         .route(
             "/subscriptions",

@@ -97,11 +97,35 @@ docker-compose.yml   Full local dev stack
   that verifies its own JWT (`app/auth.py`) instead of assuming the
   gateway did, because it can trigger a real autonomous git commit + PR;
   match that pattern for any future route with real side effects.
+- **ES|QL query strings must bind caller input via `params`, never
+  f-string/string-interpolate it in.** `app/search/elasticsearch_setup.py`'s
+  `top_entity_types_by_source` (reachable unauthenticated per the
+  trust-boundary note above) used to build
+  `f'... WHERE source == "{source}" ...'` directly -- a `source` value
+  like `x" | LIMIT 1 | FROM some_other_index // ` broke out of the quoted
+  literal and appended arbitrary ES|QL pipeline stages, confirmed by
+  construction. Fixed by binding `source` to a `?` placeholder via
+  `esql_query`'s `params` argument (real parameterization, not escaping).
+  Any new ES|QL helper that takes caller-controlled input must do the
+  same.
 - **`JWT_SECRET` must be set explicitly** in any environment reachable
   outside your own machine (`docker-compose.yml` now requires it via
   `${JWT_SECRET:?...}`). The old default (`dev-only-insecure-secret`) is
   a public string in this repo's history -- anyone who knows it can forge
   a token. The gateway logs a `WARN` if it falls back to that default.
+- **A `PgListener` (or any long-lived DB session) must never borrow from
+  the gateway's shared `PgPool`.** `routes/alerts_ws.rs`'s `/ws/alerts`
+  used to open its `PgListener` via `PgListener::connect_with(&state.db)`,
+  which pulls a real connection out of the same 10-connection pool every
+  other route shares and holds it for that WebSocket's entire lifetime --
+  confirmed live that ~10 concurrent `/ws/alerts` connections from one
+  ordinary, legitimately-issued JWT (no elevated privilege, no rate-limit
+  bypass, since the route was never behind `rate_limit.rs` either)
+  starved `/health`, `/search`, and `/subscriptions` gateway-wide.
+  `PgListener::connect(&state.config.database_url)` opens a dedicated
+  connection outside the pool instead. Any future long-held DB session
+  (another LISTEN/NOTIFY consumer, a streaming export, etc.) must do the
+  same, not reuse `state.db`.
 - **Geo queries must be indexed on the same expression they filter on.**
   `research_entities`'s spatial queries cast `geom::geography` (for
   accurate meter-based `ST_DWithin`/`ST_Distance`), which a plain

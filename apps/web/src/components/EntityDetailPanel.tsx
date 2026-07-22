@@ -34,8 +34,14 @@ export function EntityDetailPanel() {
     <div className="space-y-4 print:text-black">
       <div className="flex items-start justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Entity detail</h3>
-        <Button variant="ghost" size="icon" onClick={() => setSelectedEntityId(null)} className="print:hidden">
-          <X className="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Close entity detail"
+          onClick={() => setSelectedEntityId(null)}
+          className="print:hidden"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
 

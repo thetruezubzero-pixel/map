@@ -108,8 +108,16 @@ def weighted_consensus(
     ranked = sorted(groups.items(), key=lambda kv: group_score(kv[1]), reverse=True)
     winning_key, winning_group = ranked[0]
 
+    # _break_tie already only matters when winning_group has more than one
+    # vote at (or near) the top weight -- gating it on len(ranked) == 1 (only
+    # one output proposed at all) was wrong: a real multi-group scenario
+    # (agents disagreeing) with a weight-tied top pair inside the winning
+    # group fell through to "whichever agent the DB happened to return
+    # first", silently bypassing the actuarial-arbiter guarantee the
+    # docstring above promises. Confirmed live: an amateur vote beat an
+    # equally-weighted actuarial vote purely by list order before this fix.
     winning_group_sorted = sorted(winning_group, key=lambda v: v.weight, reverse=True)
-    winning_vote = _break_tie(winning_group_sorted) if len(ranked) == 1 else winning_group_sorted[0]
+    winning_vote = _break_tie(winning_group_sorted)
 
     agreement_ratio = sum(v.weight for v in winning_group) / total_weight
 
@@ -136,9 +144,17 @@ def weighted_consensus(
 
 
 def _break_tie(candidates: list[Vote]) -> Vote:
-    """Tie-breaker: prefer an actuarial-level agent (per spec, actuarial
-    agents "can approve/reject amateur agent outputs" -- they're the
-    designated arbiter), then fall back to highest raw weight."""
+    """Picks the vote credited as the winning group's representative
+    (winning_agent_id/consensus_output). Despite the name, this is not
+    conditioned on an actual weight tie -- it unconditionally prefers
+    any actuarial-level vote present in `candidates` over every
+    non-actuarial vote, tied or not (per spec, actuarial agents "can
+    approve/reject amateur agent outputs" -- they're the designated
+    arbiter), falling back to highest raw weight only when no
+    actuarial vote is present. `candidates` is always exactly the
+    winning group (weighted_consensus never calls this with anything
+    else), so this is "who gets credit for this win," not narrowly
+    "who wins a tie.\""""
     actuarial = [v for v in candidates if v.agent_level == "actuarial"]
     pool = actuarial or candidates
     return max(pool, key=lambda v: v.weight)

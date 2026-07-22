@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   forceCenter,
   forceLink,
@@ -104,7 +104,10 @@ export function AgentGraph({ agents, onSelect }: { agents: AgentSummary[]; onSel
     <svg
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       className="h-auto w-full max-w-[480px] rounded-md border border-border bg-surface"
-      role="img"
+      // role="img" would flatten the interactive nodes below out of the
+      // accessibility tree entirely -- only appropriate when there's
+      // nothing to select.
+      role={onSelect ? 'group' : 'img'}
       aria-label={`Agent lineage graph, ${agents.length} agent${agents.length === 1 ? '' : 's'}`}
     >
       {simLinks.map((link, i) => {
@@ -122,6 +125,19 @@ export function AgentGraph({ agents, onSelect }: { agents: AgentSummary[]; onSel
             transform={`translate(${pos.x},${pos.y})`}
             className={onSelect ? 'cursor-pointer' : undefined}
             onClick={() => onSelect?.(node.id)}
+            {...(onSelect
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  'aria-label': `Select agent ${node.name} (${node.role.replace('_', ' ')}, ${node.level})`,
+                  onKeyDown: (e: KeyboardEvent) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onSelect(node.id)
+                    }
+                  },
+                }
+              : {})}
           >
             <circle
               r={radiusFor(node.current_weight)}

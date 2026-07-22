@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Map, {
   Layer,
   Marker,
@@ -6,12 +6,13 @@ import Map, {
   Popup,
   Source,
   type MapMouseEvent,
+  type MapRef,
 } from 'react-map-gl/mapbox'
-import type { FeatureCollection, Point } from 'geojson'
+import type { Feature, FeatureCollection, Geometry, Point } from 'geojson'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { BASE_STYLES, useMapStore } from '@/store/useMapStore'
 import { useAlertStore } from '@/store/useAlertStore'
-import { getHeatmap, search, type AlertSeverity } from '@/lib/api'
+import { getBoundaries, getHeatmap, search, type AlertSeverity, type BoundaryType } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ?? ''
@@ -37,6 +38,11 @@ const NLCD_WMS_TILE_URL =
   'https://www.mrlc.gov/geoserver/mrlc_display/wms?service=WMS&version=1.1.1&request=GetMap' +
   '&layers=NLCD_Land_Cover&bbox={bbox-epsg-3857}&width=256&height=256&srs=EPSG:3857&format=image/png&transparent=true'
 
+const BOUNDARY_COLORS: Record<BoundaryType, string> = {
+  census_tract: '#34d3a3',
+  zoning: '#7c5cff',
+}
+
 // Stable object reference (module scope) so the `terrain` prop below
 // doesn't change identity every render when the layer is on -- react-map-gl
 // diffs this prop and calls mapbox's setTerrain() on identity change.
@@ -56,6 +62,14 @@ export function MapView() {
   const alerts = useAlertStore((s) => s.alerts)
 
   const [heatmapData, setHeatmapData] = useState<FeatureCollection<Point> | null>(null)
+  const [censusTractData, setCensusTractData] = useState<FeatureCollection | null>(null)
+  const [zoningData, setZoningData] = useState<FeatureCollection | null>(null)
+  const mapRef = useRef<MapRef>(null)
+  // fetchBoundaryLayer is called both from the toggle-effect and from
+  // onMoveEnd, so a quick pan/toggle sequence can have two in-flight
+  // requests for the same layer in flight at once -- this guards against
+  // an older bbox's response landing after a newer one and clobbering it.
+  const boundaryRequestIds = useRef<Record<BoundaryType, number>>({ census_tract: 0, zoning: 0 })
 
   const geolocatedAlerts = useMemo(
     () => alerts.filter((a) => a.lat != null && a.lon != null),
@@ -73,6 +87,59 @@ export function MapView() {
   )
 
   const terrainConfig = layers.terrain ? TERRAIN_CONFIG : undefined
+
+  // Boundary polygons (research_entity_boundaries) are bbox-scoped rather
+  // than fetched in full -- a nationwide census-tract layer is
+  // enormous, so /boundaries is queried against the current visible map
+  // bounds, same as any tile-service-shaped API. Re-fetched on toggle and
+  // on every pan/zoom (onMoveEnd below) while the layer is on.
+  const fetchBoundaryLayer = useCallback(
+    (boundaryType: BoundaryType, setter: (data: FeatureCollection | null) => void) => {
+      const bounds = mapRef.current?.getMap().getBounds()
+      if (!bounds) {
+        setter(null)
+        return
+      }
+      const requestId = ++boundaryRequestIds.current[boundaryType]
+      const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()].join(',')
+      getBoundaries(boundaryType, bbox)
+        .then((res) => {
+          if (boundaryRequestIds.current[boundaryType] !== requestId) return
+          setter({
+            type: 'FeatureCollection',
+            features: res.results.map(
+              (r): Feature<Geometry> => ({
+                type: 'Feature',
+                properties: { id: r.id, name: r.name, source: r.source },
+                geometry: r.geometry,
+              }),
+            ),
+          })
+        })
+        .catch((err) => {
+          if (boundaryRequestIds.current[boundaryType] !== requestId) return
+          console.error(`failed to load ${boundaryType} boundaries`, err)
+          setter(null)
+        })
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!layers.censusTracts) {
+      setCensusTractData(null)
+      return
+    }
+    fetchBoundaryLayer('census_tract', setCensusTractData)
+  }, [layers.censusTracts, fetchBoundaryLayer])
+
+  useEffect(() => {
+    if (!layers.zoningDistricts) {
+      setZoningData(null)
+      return
+    }
+    fetchBoundaryLayer('zoning', setZoningData)
+  }, [layers.zoningDistricts, fetchBoundaryLayer])
 
   useEffect(() => {
     if (!layers.newsHeatmap) {
@@ -138,15 +205,18 @@ export function MapView() {
 
   return (
     <Map
+      ref={mapRef}
       mapboxAccessToken={MAPBOX_TOKEN}
       initialViewState={viewport}
-      onMoveEnd={(evt) =>
+      onMoveEnd={(evt) => {
         setViewport({
           longitude: evt.viewState.longitude,
           latitude: evt.viewState.latitude,
           zoom: evt.viewState.zoom,
         })
-      }
+        if (layers.censusTracts) fetchBoundaryLayer('census_tract', setCensusTractData)
+        if (layers.zoningDistricts) fetchBoundaryLayer('zoning', setZoningData)
+      }}
       onClick={handleClick}
       mapStyle={BASE_STYLES[baseStyle]}
       terrain={terrainConfig}
@@ -167,6 +237,36 @@ export function MapView() {
       {layers.landCover && (
         <Source id="nlcd-land-cover" type="raster" tiles={[NLCD_WMS_TILE_URL]} tileSize={256}>
           <Layer id="nlcd-land-cover-layer" type="raster" paint={{ 'raster-opacity': 0.55 }} />
+        </Source>
+      )}
+
+      {layers.censusTracts && censusTractData && (
+        <Source id="census-tract-boundaries" type="geojson" data={censusTractData}>
+          <Layer
+            id="census-tract-fill"
+            type="fill"
+            paint={{ 'fill-color': BOUNDARY_COLORS.census_tract, 'fill-opacity': 0.12 }}
+          />
+          <Layer
+            id="census-tract-outline"
+            type="line"
+            paint={{ 'line-color': BOUNDARY_COLORS.census_tract, 'line-width': 1, 'line-opacity': 0.6 }}
+          />
+        </Source>
+      )}
+
+      {layers.zoningDistricts && zoningData && (
+        <Source id="zoning-district-boundaries" type="geojson" data={zoningData}>
+          <Layer
+            id="zoning-district-fill"
+            type="fill"
+            paint={{ 'fill-color': BOUNDARY_COLORS.zoning, 'fill-opacity': 0.12 }}
+          />
+          <Layer
+            id="zoning-district-outline"
+            type="line"
+            paint={{ 'line-color': BOUNDARY_COLORS.zoning, 'line-width': 1, 'line-opacity': 0.6 }}
+          />
         </Source>
       )}
 

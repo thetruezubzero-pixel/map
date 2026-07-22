@@ -1,4 +1,5 @@
 pub mod alerts_ws;
+pub mod boundaries;
 pub mod entities;
 pub mod geocode;
 pub mod health;

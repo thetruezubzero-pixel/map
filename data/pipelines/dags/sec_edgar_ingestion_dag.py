@@ -68,6 +68,10 @@ def sec_edgar_ingestion_dag():
                         "entity_type": "business",
                         "source": "sec_edgar",
                         "license": "SEC EDGAR -- public domain, no copyright restriction",
+                        # Top-level, not just metadata -- app/graph/resolve.py's
+                        # exact-ID match signal reads this as a real column
+                        # (see common/db.py's upsert_entities docstring).
+                        "cik": str(company.cik) if company.cik is not None else None,
                         "metadata": {
                             "cik": company.cik,
                             "ticker": ticker,
@@ -82,7 +86,15 @@ def sec_edgar_ingestion_dag():
                 records.append(
                     scrub_record(
                         {
-                            "name": f"{company.name} {f.form} ({f.filing_date})",
+                            # accession_no included: two filings of the
+                            # same form on the same date for the same
+                            # company (amendments, multi-8-K days) do
+                            # happen -- without it, they'd collide on the
+                            # (source, entity_type, name) unique
+                            # constraint and the second would be silently
+                            # dropped by upsert_entities' ON CONFLICT DO
+                            # NOTHING.
+                            "name": f"{company.name} {f.form} ({f.filing_date}) {f.accession_no}",
                             "entity_type": "government_filing",
                             "source": "sec_edgar",
                             "license": "SEC EDGAR -- public domain, no copyright restriction",
