@@ -14,12 +14,18 @@ const SOURCES = [
   'usgs_national_map',
   'gdelt',
   'data_gov',
+  'fema_nfhl',
+  'noaa_nws_alerts',
 ] as const
 
 const BASE_STYLE_LABELS: Record<BaseStyle, string> = {
   streets: 'Streets',
   satellite: 'Satellite',
   outdoors: 'Outdoors',
+  light: 'Light',
+  satelliteOnly: 'Satellite (no labels)',
+  navigationDay: 'Navigation (day)',
+  navigationNight: 'Navigation (night)',
 }
 
 export function FilterPanel() {
@@ -38,14 +44,14 @@ export function FilterPanel() {
     <div className="space-y-5">
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Base map</h3>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Base map style">
           {(Object.keys(BASE_STYLES) as BaseStyle[]).map((style) => (
             <Button
               key={style}
               size="sm"
               variant={baseStyle === style ? 'default' : 'outline'}
+              aria-pressed={baseStyle === style}
               onClick={() => setBaseStyle(style)}
-              className="flex-1"
             >
               {BASE_STYLE_LABELS[style]}
             </Button>

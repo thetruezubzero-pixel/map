@@ -16,6 +16,8 @@ via `common.db.upsert_entities`).
 | `usgs_elevation_sync` | USGS Elevation Point Query Service | `@monthly` | `location` | none |
 | `gdelt_events_sync` | GDELT 2.0 Doc API | `@daily` | `news_mention` | none |
 | `data_gov_search_sync` | Data.gov (CKAN `package_search`) | `@weekly` | `government_filing` | none |
+| `fema_flood_hazard_sync` | FEMA NFHL (flood hazard zones) | `@monthly` | `location` | none |
+| `noaa_alerts_sync` | NOAA/NWS active weather alerts | `@hourly` | `location` | none (real User-Agent required) |
 | `entity_resolution` | (internal) `research_entities` dedup pass | `@daily` | n/a -- writes `entity_relationships`/`entity_resolution_candidates` | none |
 | `elasticsearch_sync` | (internal) `research_entities` -> ES mirror | `@hourly` | n/a -- syncs `aether_entities` ES index | none |
 
@@ -36,6 +38,7 @@ export AIRFLOW__CORE__LOAD_EXAMPLES=false
 export GATEWAY_DATABASE_URL=postgres://aether:aether@localhost:5432/aether
 export NOMINATIM_USER_AGENT="YourApp/0.1 (contact: you@yourdomain.org)"  # real contact required, see below
 export EDGAR_IDENTITY="YourApp ops@yourdomain.org"                       # required by SEC's fair-access policy
+export NOAA_NWS_USER_AGENT="YourApp/0.1 (contact: you@yourdomain.org)"   # same policy as Nominatim, see below
 export NEWSAPI_KEY=...
 export OPENCORPORATES_API_KEY=...
 
@@ -46,13 +49,15 @@ airflow standalone   # or: airflow tasks test osm_ingestion fetch_osm_records 20
 Seed queries/search terms are read from Airflow Variables (JSON list, one
 per DAG: `osm_seed_queries`, `newsapi_search_terms`,
 `opencorporates_search_terms`, `sec_edgar_tickers`, `census_county_queries`,
-`usgs_seed_points`, `gdelt_search_terms`, `data_gov_search_terms`) with
-small hardcoded defaults as a fallback so every DAG runs out of the box.
+`usgs_seed_points`, `gdelt_search_terms`, `data_gov_search_terms`,
+`fema_seed_points`, `noaa_seed_points`) with small hardcoded defaults as a
+fallback so every DAG runs out of the box.
 
-**Nominatim and SEC EDGAR both block generic placeholder identities.**
-Nominatim's usage policy rejects e.g. any `*@example.com` User-Agent
-(403); SEC EDGAR requires `EDGAR_IDENTITY` to be set at all or EdgarTools
-calls will fail. Use a real, reachable contact in both.
+**Nominatim, SEC EDGAR, and NOAA/NWS all require a real, identifying
+requester.** Nominatim's and NWS's usage policies reject generic
+placeholder User-Agents (e.g. `*@example.com`, 403); SEC EDGAR requires
+`EDGAR_IDENTITY` to be set at all or EdgarTools calls will fail. Use a
+real, reachable contact in all three.
 
 **GDELT rate-limits aggressively** on repeated calls from the same IP;
 `gdelt_events_dag.py` fails soft per search term (logs a warning, keeps
