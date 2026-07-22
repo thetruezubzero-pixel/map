@@ -1,0 +1,15 @@
+{
+  "name": "Aether Sovereign OS",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": {
+      "label": "Aether Sovereign OS",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postStartCommand": "docker compose up -d postgres redis qdrant gateway python-api web"
+}
