@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import db
 from app.config import get_settings
-from app.routers import agent_swarm, analytics, graph, health, research
+from app.routers import agent_swarm, analytics, architect, graph, health, research
 
 logging.basicConfig(level=logging.INFO)
 
@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(graph.router)
     app.include_router(analytics.router)
     app.include_router(agent_swarm.router)
+    app.include_router(architect.router)
 
     return app
 

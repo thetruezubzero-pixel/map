@@ -6,6 +6,7 @@ const LINKS = [
   { to: '/swarm', label: 'Swarm' },
   { to: '/training', label: 'Training' },
   { to: '/heirlooms', label: 'Heirlooms' },
+  { to: '/architect', label: 'Architect' },
 ]
 
 /** Phase 5 nav -- switches between the map and the agent-swarm dashboard

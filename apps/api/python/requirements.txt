@@ -20,3 +20,12 @@ vaderSentiment==3.3.2
 
 # Agent swarm (Phase 5) -- see app/agent_swarm/
 cryptography==49.0.0
+
+# The Architect (Phase 6) -- see app/auth.py. PyJWT verifies the same
+# HS256 tokens apps/gateway/src/middleware/auth.rs issues/verifies,
+# using the same JWT_SECRET -- python-api has no auth of its own
+# otherwise (see CLAUDE.md), and POST /architect/run is reachable
+# directly via web's nginx /py-api/ proxy, bypassing the gateway
+# entirely, so this route must verify the token itself rather than
+# trusting the gateway to have already done it.
+PyJWT==2.10.1

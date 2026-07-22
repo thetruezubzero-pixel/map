@@ -20,6 +20,7 @@ via `common.db.upsert_entities`).
 | `noaa_alerts_sync` | NOAA/NWS active weather alerts | `@hourly` | `location` | none (real User-Agent required) |
 | `entity_resolution` | (internal) `research_entities` dedup pass | `@daily` | n/a -- writes `entity_relationships`/`entity_resolution_candidates` | none |
 | `elasticsearch_sync` | (internal) `research_entities` -> ES mirror | `@hourly` | n/a -- syncs `aether_entities` ES index | none |
+| `project_architect_cycle` | (internal) triggers `POST /architect/run` | `@daily` | n/a -- writes `project_snapshots`/`project_plans`/`project_plan_actions` | `JWT_SECRET` (mints its own short-lived token) |
 
 All new sources are free and require no paid tier. `sec_edgar_ingestion`
 and `osm_ingestion` are the two that gate on request identity rather than

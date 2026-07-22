@@ -444,3 +444,71 @@ export function exportHeirloom(agentId: string, userId: string, deviceId: string
     body: JSON.stringify({ user_id: userId, device_id: deviceId }),
   })
 }
+
+// --- Phase 5b: the Architect (project_architect role) -- see ROADMAP.md
+// "Phase 5b: the Architect". POST /architect/run is JWT-gated (see
+// apps/api/python/app/auth.py) -- unlike every other call in this file,
+// it needs a bearer token, since it can trigger a real autonomous
+// commit + PR against this repo.
+
+export interface ProjectSnapshotSummary {
+  id: string
+  summary: string
+  created_at: string
+}
+
+export type PlanItemCategory = 'project_plan_doc' | 'code_change' | 'infra_change' | 'documentation' | 'investigation'
+
+export interface ProjectPlanItem {
+  title: string
+  rationale: string
+  category: PlanItemCategory
+  safe_to_autoimplement: boolean
+}
+
+export interface ProjectPlanSummary {
+  id: string
+  items: ProjectPlanItem[]
+  model: string
+  snapshot_summary: string
+  created_at: string
+}
+
+export type PlanActionType = 'branch_created' | 'committed' | 'pushed' | 'pr_opened' | 'skipped' | 'failed'
+
+export interface ProjectPlanAction {
+  id: string
+  plan_id: string
+  action: PlanActionType
+  branch_name: string | null
+  commit_sha: string | null
+  pr_url: string | null
+  detail: Record<string, unknown>
+  created_at: string
+}
+
+export function listSnapshots(limit = 20): Promise<ProjectSnapshotSummary[]> {
+  return pyRequest(`/architect/snapshots?limit=${limit}`)
+}
+
+export function listPlans(limit = 20): Promise<ProjectPlanSummary[]> {
+  return pyRequest(`/architect/plans?limit=${limit}`)
+}
+
+export function listPlanActions(limit = 50): Promise<ProjectPlanAction[]> {
+  return pyRequest(`/architect/actions?limit=${limit}`)
+}
+
+export interface ArchitectRunResult {
+  snapshot_id: string
+  plan_id: string
+  items: ProjectPlanItem[]
+  notes: string | null
+}
+
+export function runArchitectCycle(token: string): Promise<ArchitectRunResult> {
+  return pyRequest<ArchitectRunResult>('/architect/run', {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+}

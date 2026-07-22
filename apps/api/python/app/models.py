@@ -89,3 +89,33 @@ class ResearchJobDetail(ResearchJobResponse):
     error: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class PlanItemCategory(str, Enum):
+    """`project_plan_doc` is the only category architect_committer.py
+    will ever act on autonomously -- everything else is a real,
+    surfaced recommendation that stays advisory (shown on the /architect
+    dashboard, never auto-implemented), same "advisory unless a human
+    reviews it" shape as task_history.consensus_output."""
+
+    project_plan_doc = "project_plan_doc"
+    code_change = "code_change"
+    infra_change = "infra_change"
+    documentation = "documentation"
+    investigation = "investigation"
+
+
+class ProjectPlanItem(BaseModel):
+    title: str
+    rationale: str
+    category: PlanItemCategory
+    safe_to_autoimplement: bool = False
+
+
+class ProjectPlan(BaseModel):
+    """Output of PROJECT_ARCHITECT_AGENT, grounded in one project_snapshots
+    row (see app/agent_swarm/introspection.py)."""
+
+    items: list[ProjectPlanItem]
+    reasoning_model: str
+    notes: str | None = None
