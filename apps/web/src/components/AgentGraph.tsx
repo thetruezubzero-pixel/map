@@ -95,7 +95,18 @@ export function AgentGraph({ agents, onSelect }: { agents: AgentSummary[]; onSel
   }
 
   return (
-    <svg width={WIDTH} height={HEIGHT} className="rounded-md border border-border bg-surface">
+    // width/height stay the D3 simulation's coordinate space (the physics
+    // bounds referenced throughout this file); viewBox + a CSS max-width
+    // is what actually makes the rendered element shrink to fit a narrow
+    // container instead of getting silently clipped -- confirmed live at
+    // a 390px viewport: the fixed-pixel version rendered past the edge
+    // (SVG right edge at x=504) with no way to see or reach the rest.
+    <svg
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      className="h-auto w-full max-w-[480px] rounded-md border border-border bg-surface"
+      role="img"
+      aria-label={`Agent lineage graph, ${agents.length} agent${agents.length === 1 ? '' : 's'}`}
+    >
       {simLinks.map((link, i) => {
         const a = positions.get(link.source.id)
         const b = positions.get(link.target.id)

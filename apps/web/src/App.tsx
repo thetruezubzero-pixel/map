@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
+import { SlidersHorizontal, List, X } from 'lucide-react'
 import { SearchBar } from '@/components/SearchBar'
 import { FilterPanel, DateRangeInputs } from '@/components/FilterPanel'
 import { TimelineScrubber } from '@/components/TimelineScrubber'
@@ -7,6 +8,7 @@ import { EntityDetailPanel } from '@/components/EntityDetailPanel'
 import { AlertPanel } from '@/components/AlertPanel'
 import { SystemHealthPanel } from '@/components/SystemHealthPanel'
 import { DashboardNav } from '@/components/DashboardNav'
+import { Button } from '@/components/ui/button'
 import { useMapStore } from '@/store/useMapStore'
 import { useAlertStore } from '@/store/useAlertStore'
 
@@ -16,32 +18,72 @@ import { useAlertStore } from '@/store/useAlertStore'
 // filters, header) become interactive without waiting on it.
 const MapView = lazy(() => import('@/components/MapView').then((m) => ({ default: m.MapView })))
 
+// Below `lg`, the two always-visible desktop sidebars (w-72 + w-80) don't
+// fit next to the map on a phone-width screen -- confirmed live at a
+// 390px viewport: 626px of horizontal overflow, search bar and most nav
+// links pushed off-screen entirely. Below `lg` they're hidden by default
+// and shown one at a time as a full-screen overlay via these toggles;
+// `lg:` and up is completely unchanged from the previous fixed 3-column
+// layout.
+type MobilePanel = 'filters' | 'results' | null
+
 function App() {
   const results = useMapStore((s) => s.results)
   const selectedEntityId = useMapStore((s) => s.selectedEntityId)
   const setSelectedEntityId = useMapStore((s) => s.setSelectedEntityId)
   const unreadAlertCount = useAlertStore((s) => s.unreadCount)
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
 
   return (
     <div className="flex h-screen flex-col bg-background text-text">
-      <header className="flex items-center gap-4 border-b border-border px-4 py-3 print:hidden">
-        <h1 className="whitespace-nowrap text-lg font-semibold text-text">Aether Sovereign OS</h1>
-        <DashboardNav />
-        <div className="w-full max-w-xl">
+      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 print:hidden lg:flex-nowrap lg:gap-4">
+        <div className="flex min-w-0 items-center gap-3 lg:gap-4">
+          <h1 className="shrink-0 whitespace-nowrap text-lg font-semibold text-text">Aether Sovereign OS</h1>
+          <DashboardNav />
+        </div>
+        <div className="order-last w-full lg:order-none lg:w-full lg:max-w-xl">
           <SearchBar />
         </div>
-        {unreadAlertCount > 0 && (
-          <span
-            className="ml-auto shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-white"
-            title={`${unreadAlertCount} unread alert${unreadAlertCount === 1 ? '' : 's'}`}
+        <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-auto">
+          {unreadAlertCount > 0 && (
+            <span
+              className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-white"
+              title={`${unreadAlertCount} unread alert${unreadAlertCount === 1 ? '' : 's'}`}
+            >
+              {unreadAlertCount} alert{unreadAlertCount === 1 ? '' : 's'}
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="icon"
+            className="lg:hidden"
+            aria-label="Open filters and research panel"
+            aria-expanded={mobilePanel === 'filters'}
+            aria-controls="mobile-filters-panel"
+            onClick={() => setMobilePanel((p) => (p === 'filters' ? null : 'filters'))}
           >
-            {unreadAlertCount} alert{unreadAlertCount === 1 ? '' : 's'}
-          </span>
-        )}
+            <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="lg:hidden"
+            aria-label={`Open results (${results.length})`}
+            aria-expanded={mobilePanel === 'results'}
+            aria-controls="mobile-results-panel"
+            onClick={() => setMobilePanel((p) => (p === 'results' ? null : 'results'))}
+          >
+            <List className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 print:block">
-        <aside className="w-72 shrink-0 overflow-y-auto border-r border-border p-4 print:hidden">
+        <aside
+          id="mobile-filters-panel"
+          aria-label="Filters and research"
+          className="hidden w-72 shrink-0 overflow-y-auto border-r border-border p-4 print:hidden lg:block"
+        >
           <FilterPanel />
           <div className="mt-5">
             <DateRangeInputs />
@@ -57,7 +99,7 @@ function App() {
           </div>
         </aside>
 
-        <main className="relative flex-1 print:hidden">
+        <main className="relative min-w-0 flex-1 print:hidden">
           <Suspense
             fallback={
               <div className="flex h-full w-full items-center justify-center bg-surface text-sm text-text-muted">
@@ -69,7 +111,11 @@ function App() {
           </Suspense>
         </main>
 
-        <aside className="w-80 shrink-0 overflow-y-auto border-l border-border p-4 print:w-full print:border-0 print:p-0">
+        <aside
+          id="mobile-results-panel"
+          aria-label="Search results"
+          className="hidden w-80 shrink-0 overflow-y-auto border-l border-border p-4 print:block print:w-full print:border-0 print:p-0 lg:block"
+        >
           {selectedEntityId ? (
             <EntityDetailPanel />
           ) : (
@@ -99,6 +145,79 @@ function App() {
             </>
           )}
         </aside>
+
+        {mobilePanel && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={mobilePanel === 'filters' ? 'Filters and research' : 'Search results'}
+            className="fixed inset-0 z-40 flex lg:hidden"
+          >
+            <button
+              type="button"
+              aria-label="Close panel"
+              className="absolute inset-0 bg-black/60"
+              onClick={() => setMobilePanel(null)}
+            />
+            <div className="relative ml-auto flex h-full w-[85vw] max-w-sm flex-col overflow-y-auto bg-background p-4 shadow-xl">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close panel"
+                className="mb-2 self-end"
+                onClick={() => setMobilePanel(null)}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              {mobilePanel === 'filters' ? (
+                <>
+                  <FilterPanel />
+                  <div className="mt-5">
+                    <DateRangeInputs />
+                  </div>
+                  <div className="mt-5">
+                    <ResearchPanel />
+                  </div>
+                  <div className="mt-5 border-t border-border pt-5">
+                    <AlertPanel />
+                  </div>
+                  <div className="mt-5 border-t border-border pt-5">
+                    <SystemHealthPanel />
+                  </div>
+                </>
+              ) : selectedEntityId ? (
+                <EntityDetailPanel />
+              ) : (
+                <>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                    Results ({results.length})
+                  </h3>
+                  <ul className="space-y-2">
+                    {results.map((r) => (
+                      <li key={r.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedEntityId(r.id)
+                          }}
+                          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-left text-sm hover:bg-surface-2"
+                        >
+                          <p className="truncate font-medium text-text">{r.name}</p>
+                          <p className="text-xs text-text-muted">
+                            {r.entity_type} · {r.source}
+                          </p>
+                        </button>
+                      </li>
+                    ))}
+                    {results.length === 0 && (
+                      <p className="text-sm text-text-muted">Search an address or click the map to look up records.</p>
+                    )}
+                  </ul>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <footer className="border-t border-border p-3 print:hidden">

@@ -29,6 +29,13 @@ URL you can open on any device, including a phone browser.
      render) — a [free Mapbox token](https://account.mapbox.com/access-tokens/).
      Without it the app still runs, but the map panel shows a "set your
      token" placeholder instead of an actual map.
+   - `HEIRLOOM_DEVICE_KEY` (recommended -- needed for the Heirlooms page)
+     — a 64-character hex string (32 bytes), generated with
+     `python3 -c "import secrets; print(secrets.token_hex(32))"`. Without
+     it, everything else works, but "Export heirloom" on the `/heirlooms`
+     page fails -- agent weight snapshots are AES-256-GCM-encrypted
+     before being stored, so a real key is required, not optional
+     encryption.
    - `NEWSAPI_KEY` / `OPENCORPORATES_API_KEY` (fully optional) — widen
      which public-record sources the research agents can pull from. Each
      is just skipped if unset, no error.
