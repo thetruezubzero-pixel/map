@@ -512,3 +512,31 @@ export function runArchitectCycle(token: string): Promise<ArchitectRunResult> {
     headers: authHeaders(token),
   })
 }
+
+// --- Phase 6: census-tract/zoning polygon boundaries
+// (research_entity_boundaries, apps/gateway/src/routes/boundaries.rs) --
+// distinct from SearchResult above, which is point-only.
+
+export const BOUNDARY_TYPES = ['census_tract', 'zoning'] as const
+export type BoundaryType = (typeof BOUNDARY_TYPES)[number]
+
+export interface BoundaryResult {
+  id: string
+  name: string
+  boundary_type: BoundaryType
+  source: string
+  license: string | null
+  geometry: import('geojson').Geometry
+  retrieved_at: string
+}
+
+export function getBoundaries(
+  boundaryType?: BoundaryType,
+  bbox?: string,
+  limit = 1000,
+): Promise<{ results: BoundaryResult[]; count: number }> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (boundaryType) params.set('boundary_type', boundaryType)
+  if (bbox) params.set('bbox', bbox)
+  return request(`/boundaries?${params.toString()}`)
+}

@@ -129,6 +129,14 @@ export function FilterPanel() {
             <Checkbox checked={layers.alerts} onCheckedChange={() => toggleLayer('alerts')} />
             Alert pins
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={layers.censusTracts} onCheckedChange={() => toggleLayer('censusTracts')} />
+            Census tract boundaries
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={layers.zoningDistricts} onCheckedChange={() => toggleLayer('zoningDistricts')} />
+            Zoning districts
+          </label>
         </div>
       </div>
 
