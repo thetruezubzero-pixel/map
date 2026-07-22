@@ -57,10 +57,15 @@ export function SearchBar() {
   return (
     <div className="relative">
       <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-3">
-        <Search className="h-4 w-4 text-text-muted" />
+        <Search className="h-4 w-4 text-text-muted" aria-hidden="true" />
         <Input
           className="border-0 bg-transparent px-0 focus-visible:ring-0"
           placeholder="Search an address or public record..."
+          aria-label="Search an address or public record"
+          role="combobox"
+          aria-expanded={open && suggestions.length > 0}
+          aria-controls="search-suggestions"
+          aria-autocomplete="list"
           value={filters.query}
           onChange={(e) => {
             setQuery(e.target.value)
@@ -72,20 +77,21 @@ export function SearchBar() {
           <Button
             variant="ghost"
             size="icon"
+            aria-label="Clear search"
             onClick={() => {
               setQuery('')
               setSuggestions([])
             }}
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </Button>
         )}
       </div>
 
       {open && suggestions.length > 0 && (
-        <ul className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-lg">
+        <ul id="search-suggestions" role="listbox" className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-lg">
           {suggestions.map((hit) => (
-            <li key={hit.place_id}>
+            <li key={hit.place_id} role="option" aria-selected="false">
               <button
                 type="button"
                 className="w-full truncate px-3 py-2 text-left text-sm hover:bg-surface-2"

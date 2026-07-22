@@ -127,9 +127,11 @@ export function MapView() {
 
   if (!MAPBOX_TOKEN) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-surface text-center text-sm text-text-muted p-8">
-        Set <code className="mx-1 rounded bg-surface-2 px-1 py-0.5">VITE_MAPBOX_ACCESS_TOKEN</code>
-        in apps/web/.env to enable the map.
+      <div className="flex h-full w-full items-center justify-center bg-surface p-8 text-center text-sm text-text-muted">
+        <p className="max-w-full break-words">
+          Set <code className="mx-1 break-all rounded bg-surface-2 px-1 py-0.5">VITE_MAPBOX_ACCESS_TOKEN</code>
+          in apps/web/.env to enable the map.
+        </p>
       </div>
     )
   }

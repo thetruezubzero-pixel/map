@@ -194,6 +194,12 @@ services:
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-openai/gpt-4o}
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       OPENCORPORATES_API_KEY: ${OPENCORPORATES_API_KEY:-}
+      # Heirloom export/import (agent weight snapshots, AES-256-GCM) is
+      # disabled with a clear error until this is set -- was previously
+      # missing from this file entirely, so POST /heirlooms/{id}/export
+      # 500'd with no indication why (confirmed live). Generate one with:
+      #   python -c "import secrets; print(secrets.token_hex(32))"
+      HEIRLOOM_DEVICE_KEY: ${HEIRLOOM_DEVICE_KEY:-}
       REDIS_URL: redis://redis:6379/0
       REDIS_PASSWORD: ${REDIS_PASSWORD:-aether}
       QDRANT_URL: http://qdrant:6333
