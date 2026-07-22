@@ -25,6 +25,12 @@ export function SearchBar() {
   const debouncedQuery = useDebounced(filters.query, 300)
   const requestId = useRef(0)
 
+  // Geocode address-autocomplete suggestions need a substantive query (a
+  // 1-2 char geocode lookup is noise), but entity search results must
+  // reflect the current filters even with an empty query -- otherwise
+  // toggling a source/entity-type/date filter on a blank search box does
+  // nothing (confirmed live: 0 network requests, "Results (0)" never
+  // changes) until the user has separately typed 3+ characters.
   useEffect(() => {
     const q = debouncedQuery.trim()
     if (q.length < 3) {
@@ -40,9 +46,12 @@ export function SearchBar() {
       .catch(() => {
         if (id === requestId.current) setSuggestions([])
       })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery])
 
+  useEffect(() => {
     search({
-      q,
+      q: debouncedQuery.trim() || undefined,
       source: filters.source ?? undefined,
       entity_type: filters.entityType ?? undefined,
       date_from: filters.dateFrom ?? undefined,
