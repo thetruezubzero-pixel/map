@@ -19,6 +19,10 @@ export const BASE_STYLES = {
   streets: 'mapbox://styles/mapbox/dark-v11',
   satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
   outdoors: 'mapbox://styles/mapbox/outdoors-v12',
+  light: 'mapbox://styles/mapbox/light-v11',
+  satelliteOnly: 'mapbox://styles/mapbox/satellite-v9',
+  navigationDay: 'mapbox://styles/mapbox/navigation-day-v1',
+  navigationNight: 'mapbox://styles/mapbox/navigation-night-v1',
 } as const
 export type BaseStyle = keyof typeof BASE_STYLES
 

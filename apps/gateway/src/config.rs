@@ -8,6 +8,7 @@ pub struct Config {
     pub nominatim_base_url: String,
     pub nominatim_user_agent: String,
     pub nominatim_api_key: Option<String>,
+    pub photon_base_url: String,
     pub jwt_secret: String,
     pub python_api_base_url: String,
     pub rate_limit_burst: u32,
@@ -40,6 +41,16 @@ impl Config {
             nominatim_user_agent: env::var("NOMINATIM_USER_AGENT")
                 .unwrap_or_else(|_| "AetherSovereignOS/0.2 (contact: set NOMINATIM_USER_AGENT)".to_string()),
             nominatim_api_key: env::var("NOMINATIM_API_KEY").ok(),
+            // Fallback geocoder -- Nominatim rate-limits/blocks aggressively
+            // per its usage policy (confirmed live: this sandbox's shared
+            // egress IP gets a flat 403 regardless of User-Agent), and it's
+            // the only geocoder this gateway had, so any Nominatim outage
+            // or block took /geocode down entirely. Photon is a separate,
+            // independently-run, keyless public instance over the same OSM
+            // data (https://photon.komoot.io) -- not affiliated with
+            // Nominatim, so a block/outage on one doesn't take down both.
+            photon_base_url: env::var("PHOTON_BASE_URL")
+                .unwrap_or_else(|_| "https://photon.komoot.io/api".to_string()),
             jwt_secret: env::var("JWT_SECRET").unwrap_or_else(|_| {
                 tracing::warn!(
                     "JWT_SECRET is not set -- falling back to a well-known insecure default. \
