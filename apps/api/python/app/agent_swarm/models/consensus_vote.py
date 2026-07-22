@@ -144,9 +144,17 @@ def weighted_consensus(
 
 
 def _break_tie(candidates: list[Vote]) -> Vote:
-    """Tie-breaker: prefer an actuarial-level agent (per spec, actuarial
-    agents "can approve/reject amateur agent outputs" -- they're the
-    designated arbiter), then fall back to highest raw weight."""
+    """Picks the vote credited as the winning group's representative
+    (winning_agent_id/consensus_output). Despite the name, this is not
+    conditioned on an actual weight tie -- it unconditionally prefers
+    any actuarial-level vote present in `candidates` over every
+    non-actuarial vote, tied or not (per spec, actuarial agents "can
+    approve/reject amateur agent outputs" -- they're the designated
+    arbiter), falling back to highest raw weight only when no
+    actuarial vote is present. `candidates` is always exactly the
+    winning group (weighted_consensus never calls this with anything
+    else), so this is "who gets credit for this win," not narrowly
+    "who wins a tie.\""""
     actuarial = [v for v in candidates if v.agent_level == "actuarial"]
     pool = actuarial or candidates
     return max(pool, key=lambda v: v.weight)
