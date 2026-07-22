@@ -281,6 +281,37 @@ higher-volume streams (watermarks advance from real event flow rather
 than falling back to idle-timeout), and/or a much tighter idle-timeout
 tuned against actual traffic patterns rather than this dev default.
 
+**Edge case found during the Phase 1-5 health check, not previously
+documented:** the ~42s figure above assumes the source eventually goes
+idle *after* the events needed for a match/window have already arrived
+close together. If the source goes idle and simply **stays** idle (no
+further events on any source feeding that operator -- the realistic
+steady state between Airflow-scheduled poll cycles), the watermark does
+not keep advancing on its own. Live-verified: after publishing 105 real
+SEC EDGAR filings (3 of them sharing a CIK, easily enough to trigger both
+`FILING_CLUSTER` and `FILING_VOLUME_SPIKE`) and confirming via the
+TaskManager log that every partition was correctly marked idle, the
+`GlobalWindowAggregate` operator's `currentInputWatermark` metric stayed
+pinned at exactly `max(event_time) - 10s` for **17+ minutes** of continuous
+polling -- zero output on `aether.detected_patterns` the entire time.
+Publishing a single additional event with a fresh (current) timestamp
+immediately pushed the watermark forward and flushed everything at once:
+all 10 pending `FILING_VOLUME_SPIKE` windows and all 3 `FILING_CLUSTER`
+matches appeared within seconds, each with correct data (verified against
+the source counts). So `table.exec.source.idle-timeout` does what its
+name says -- it stops one idle source from blocking a *different active*
+source's watermark (the interval join case) -- but it does not manufacture
+forward progress when every source feeding an operator is simultaneously
+idle with nothing left to arrive; closure there waits for the next real
+event. In production this self-resolves on the next Airflow-scheduled
+ingestion cycle that finds new data (SEC EDGAR/GDELT polls run periodically,
+so the source is never idle *forever*), but it does mean detections
+raised entirely within one quiet polling gap won't reach
+`aether.detected_patterns` until the *next* poll cycle produces at least
+one new event of any kind on that topic -- a real, bounded-but-nonzero
+delay worth knowing about, not a correctness bug (the pattern math itself
+is exactly right once it fires, per the counts above).
+
 The rest of the path is fast, and this was also measured, not assumed:
 alert_dispatcher's Postgres INSERT into `user_alerts` to the browser
 receiving it over `GET /ws/alerts` (LISTEN/NOTIFY -> fetch row -> WS
