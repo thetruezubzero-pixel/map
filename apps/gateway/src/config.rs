@@ -58,14 +58,36 @@ impl Config {
             // Nominatim, so a block/outage on one doesn't take down both.
             photon_base_url: env::var("PHOTON_BASE_URL")
                 .unwrap_or_else(|_| "https://photon.komoot.io/api".to_string()),
-            jwt_secret: env::var("JWT_SECRET").unwrap_or_else(|_| {
-                tracing::warn!(
-                    "JWT_SECRET is not set -- falling back to a well-known insecure default. \
-                     Tokens signed with it are forgeable. Set JWT_SECRET before deploying anywhere \
-                     reachable outside your own machine."
-                );
-                "dev-only-insecure-secret".to_string()
-            }),
+            jwt_secret: {
+                let value = env::var("JWT_SECRET").unwrap_or_else(|_| {
+                    tracing::warn!(
+                        "JWT_SECRET is not set -- falling back to a well-known insecure default. \
+                         Tokens signed with it are forgeable. Set JWT_SECRET before deploying anywhere \
+                         reachable outside your own machine."
+                    );
+                    "dev-only-insecure-secret".to_string()
+                });
+                // A "connect the dots" audit found this check only caught the
+                // *missing* case -- but .env.example ships
+                // `JWT_SECRET=change-me-in-production` as a literal value, and
+                // docker-compose's `${JWT_SECRET:?...}` guard only requires
+                // non-empty, not "was actually changed". Anyone who copies the
+                // example file verbatim (a natural first step) ends up with a
+                // JWT_SECRET that's just as publicly known and forgeable as the
+                // old hardcoded default this warning already exists to catch --
+                // just via a different well-known string. Same warning, same
+                // reasoning, closing the gap the placeholder text left open.
+                if value == "change-me-in-production" {
+                    tracing::warn!(
+                        "JWT_SECRET is still the placeholder value from .env.example \
+                         (\"change-me-in-production\") -- this is just as forgeable as never \
+                         setting it, since it's a known string in this repo's history. Set a \
+                         real random secret before deploying anywhere reachable outside your \
+                         own machine."
+                    );
+                }
+                value
+            },
             python_api_base_url: env::var("PYTHON_API_BASE_URL")
                 .unwrap_or_else(|_| "http://localhost:8000".to_string()),
             rate_limit_burst: env::var("RATE_LIMIT_BURST")

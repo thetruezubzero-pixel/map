@@ -17,12 +17,25 @@ from fastapi import HTTPException, Request
 
 from app.config import get_settings
 
+# A "connect the dots" audit found that copying apps/gateway/.env.example's
+# literal JWT_SECRET=change-me-in-production straight into a real .env
+# satisfies docker-compose's `${JWT_SECRET:?...}` non-empty guard, and used
+# to pass the `not settings.jwt_secret` check below too -- but it's just as
+# forgeable as leaving JWT_SECRET unset, since it's a known public string in
+# this repo's own example file. Anyone who's read this open-source repo can
+# mint a valid token for POST /architect/run (a route that can trigger a
+# real git commit + PR) using this exact secret. Treated identically to the
+# missing-secret case, not just warned about, since this route already
+# fails closed rather than open.
+_KNOWN_PLACEHOLDER_SECRETS = {"change-me-in-production"}
+
 
 def require_user_id(request: Request) -> str:
     settings = get_settings()
-    if not settings.jwt_secret:
-        # No secret configured at all -- fail closed, not open. A route
-        # gated on this dependency must never silently become anonymous.
+    if not settings.jwt_secret or settings.jwt_secret in _KNOWN_PLACEHOLDER_SECRETS:
+        # No secret configured at all (or still the well-known example
+        # placeholder) -- fail closed, not open. A route gated on this
+        # dependency must never silently become anonymous or forgeable.
         raise HTTPException(status_code=503, detail="JWT_SECRET not configured; this route is disabled")
 
     auth = request.headers.get("authorization", "")

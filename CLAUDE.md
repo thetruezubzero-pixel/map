@@ -170,6 +170,19 @@ docker-compose.yml   Full local dev stack
   `${JWT_SECRET:?...}`). The old default (`dev-only-insecure-secret`) is
   a public string in this repo's history -- anyone who knows it can forge
   a token. The gateway logs a `WARN` if it falls back to that default.
+  A "connect the dots" audit found a second, equally-public string with
+  the same problem: every `.env.example` in this repo ships
+  `JWT_SECRET=change-me-in-production` as a literal value, and
+  docker-compose's `${JWT_SECRET:?...}` guard only checks non-empty --
+  copying the example file verbatim satisfies that guard while leaving a
+  known, publicly-documented secret in place. The gateway now warns on
+  this specific value too (`config.rs`), and python-api's
+  `require_user_id` (the one route this actually gates,
+  `POST /architect/run`) treats it identically to "not configured" --
+  503, fail closed, not just logged. If you ever introduce a new
+  `.env.example` placeholder for a security-sensitive value, apply the
+  same "treat the known placeholder like the missing case" pattern, not
+  just an emptiness check.
 - **A `PgListener` (or any long-lived DB session) must never borrow from
   the gateway's shared `PgPool`.** `routes/alerts_ws.rs`'s `/ws/alerts`
   used to open its `PgListener` via `PgListener::connect_with(&state.db)`,
