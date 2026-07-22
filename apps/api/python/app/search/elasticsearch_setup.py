@@ -10,13 +10,12 @@ PostGIS full-text/spatial queries in the Rust gateway don't cover as
 conveniently.
 
 NOT implemented: ENRICH spatial joins against census-tract/zoning-district
-polygons. `research_entities` only stores point geometry (see
-migrations/0001_init.sql), and the Census/USGS DAGs in this phase only
-ingest point data (county centroids, elevation samples) -- there's no
-polygon boundary layer yet for ENRICH to join against. Adding one is a
-real schema change (a polygon table + an ENRICH policy keyed on
-ST_CONTAINS), not a config flag, so it's left for whenever that boundary
-data is actually ingested rather than faked here.
+polygons. Phase 6 (see ROADMAP.md) added a real polygon boundary layer --
+`research_entity_boundaries` (migrations/0010_entity_boundaries.sql),
+populated by census_tract_boundary_sync/zoning_districts_sync, served via
+the gateway's `GET /boundaries` -- so the schema/data half of this gap is
+closed. Wiring an actual ES ENRICH policy against it (keyed on
+ST_CONTAINS or the ES|QL equivalent) is still a separate, unbuilt task.
 """
 
 from app.config import get_settings
@@ -189,24 +188,41 @@ async def bulk_sync_from_postgres(pool, batch_size: int = 500) -> int:
     return success
 
 
-def esql_query(query: str) -> dict:
+def esql_query(query: str, params: list | None = None) -> dict:
     """Runs a raw ES|QL query (e.g. STATS/geo functions) and returns the
     column/value table as-is. Used for ad-hoc aggregations like 'top N
     industries by business count in this area' that are more naturally
-    expressed in ES|QL than the Query DSL."""
+    expressed in ES|QL than the Query DSL.
+
+    `params`, when given, binds `?` placeholders in `query` via ES|QL's
+    own parameterization (not string interpolation) -- required whenever
+    any part of `query` is caller-controlled input; see
+    top_entity_types_by_source for why."""
     client = get_client()
-    resp = client.esql.query(query=query)
+    resp = client.esql.query(query=query, params=params)
     return resp.body
 
 
 def top_entity_types_by_source(source: str, limit: int = 10) -> dict:
     """Example ES|QL aggregation: entity_type counts for one source,
-    ranked -- the ES|QL analogue of a SQL GROUP BY + ORDER BY + LIMIT."""
+    ranked -- the ES|QL analogue of a SQL GROUP BY + ORDER BY + LIMIT.
+
+    `source` is reachable from an unauthenticated route
+    (GET /analytics/top-entity-types, see CLAUDE.md's python-api
+    trust-boundary note) -- it used to be f-string-interpolated straight
+    into the query string, so a value like
+    `x" | LIMIT 1 | FROM some_other_index // ` could break out of the
+    quoted literal and append arbitrary ES|QL stages. Bound via `?` +
+    `params` instead, ES|QL's own parameterization, so `source` can never
+    be anything but a literal value being compared against. `limit` is
+    coerced to `int` explicitly rather than trusting the caller's type
+    hint -- FastAPI's route already validates it, but this function
+    shouldn't rely on every future caller doing the same."""
     query = (
         f'FROM {INDEX_NAME} '
-        f'| WHERE source == "{source}" '
+        f'| WHERE source == ? '
         f"| STATS count = COUNT(*) BY entity_type "
         f"| SORT count DESC "
-        f"| LIMIT {limit}"
+        f"| LIMIT {int(limit)}"
     )
-    return esql_query(query)
+    return esql_query(query, params=[source])

@@ -70,6 +70,24 @@ def test_weighted_consensus_tie_prefers_actuarial_agent():
     assert result.winning_agent_id == AGENT_B
 
 
+def test_weighted_consensus_tie_prefers_actuarial_agent_with_a_dissenting_group():
+    """Regression test: the tie-break used to only run when every agent
+    proposed the same output (len(ranked) == 1). With a real second,
+    losing group present (agents genuinely disagreeing -- the normal
+    case this whole mechanism exists for), a weight tie inside the
+    *winning* group fell through to list order instead of the actuarial
+    arbiter, silently defeating the tie-break for exactly the scenario
+    it was built for."""
+    votes = [
+        make_vote(AGENT_A, "amateur", 2.0, 1.0, "business"),
+        make_vote(AGENT_B, "actuarial", 2.0, 1.0, "business"),
+        make_vote(AGENT_C, "amateur", 1.0, 1.0, "government_filing"),
+    ]
+    result = weighted_consensus(votes)
+    assert result.winning_agent_id == AGENT_B
+    assert result.consensus_output_key == "business"
+
+
 def test_bayesian_confidence_updates_toward_observed_reliability():
     prior = BayesianConfidence()
     assert prior.mean == pytest.approx(0.5)

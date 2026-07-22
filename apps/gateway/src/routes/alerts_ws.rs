@@ -56,7 +56,13 @@ pub async fn ws_alerts(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: AppState, user_id: String) {
-    let mut listener = match PgListener::connect_with(&state.db).await {
+    // `PgListener::connect_with(&state.db)` would pull a real connection out
+    // of the shared pool (max_connections=10) and hold it for this socket's
+    // entire lifetime -- confirmed live that ~10 concurrent WS connections
+    // from one valid JWT starves every other DB-backed route (/health,
+    // /search, /subscriptions, ...) gateway-wide. `connect()` opens a
+    // dedicated connection outside the shared pool instead.
+    let mut listener = match PgListener::connect(&state.config.database_url).await {
         Ok(l) => l,
         Err(err) => {
             tracing::error!("ws_alerts: failed to open PgListener: {err}");
