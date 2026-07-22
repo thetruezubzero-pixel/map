@@ -40,6 +40,61 @@ PYTHON_API_ROUTERS = [
 ]
 
 
+async def _swarm_health(pool) -> list[dict]:
+    """Per-role, per-level swarm health -- read-only input for the
+    Architect's planning (see build_project_snapshot's docstring: this
+    module never mutates agent_registry/task_history, only reads them,
+    same trust level as everything else in the snapshot). Graduation
+    reuses the exact accuracy/consecutive-successes formula
+    agent_weight.meets_graduation_criteria applies in application code
+    (kept in sync by hand -- there are only two thresholds, 0.90 and 50).
+    """
+    agent_rows = await pool.fetch(
+        """
+        SELECT role, level, count(*) AS n, avg(current_weight) AS avg_weight,
+               count(*) FILTER (
+                   WHERE level = 'amateur'
+                     AND total_successes::float / NULLIF(total_tasks, 0) >= 0.90
+                     AND consecutive_successes >= 50
+               ) AS graduated_amateurs
+        FROM agent_registry
+        WHERE role IN ('query_analyzer', 'data_retriever', 'result_synthesizer')
+        GROUP BY 1, 2 ORDER BY 1, 2
+        """
+    )
+
+    # Recent-disagreement rate: fraction of a role's last 200 consensus
+    # rounds where the (nonzero-weight) votes didn't converge on one
+    # output_key. task_history doesn't persist ConsensusResult.agreement_ratio
+    # directly, so this is reconstructed from the same votes JSON the
+    # /swarm dashboard already renders, not a new stored metric.
+    task_rows = await pool.fetch(
+        """
+        SELECT role, votes FROM task_history
+        WHERE role IN ('query_analyzer', 'result_synthesizer')
+        ORDER BY created_at DESC LIMIT 200
+        """
+    )
+    disagreements: dict[str, list[bool]] = {}
+    for r in task_rows:
+        votes = json.loads(r["votes"]) if isinstance(r["votes"], str) else r["votes"]
+        keys = {v["output_key"] for v in votes if v.get("weight", 0) > 0}
+        disagreements.setdefault(r["role"], []).append(len(keys) > 1)
+    disagreement_rate = {role: sum(flags) / len(flags) for role, flags in disagreements.items() if flags}
+
+    return [
+        {
+            "role": r["role"],
+            "level": r["level"],
+            "count": r["n"],
+            "avg_weight": float(r["avg_weight"]) if r["avg_weight"] is not None else None,
+            "graduated_amateurs": r["graduated_amateurs"] if r["level"] == "amateur" else None,
+            "recent_disagreement_rate": disagreement_rate.get(r["role"]),
+        }
+        for r in agent_rows
+    ]
+
+
 async def _db_counts(pool) -> dict:
     entity_rows = await pool.fetch(
         "SELECT source, entity_type, count(*) AS n FROM research_entities GROUP BY 1, 2 ORDER BY 1, 2"
@@ -130,7 +185,7 @@ async def build_project_snapshot(pool) -> dict:
     settings = get_settings()
     project_root = Path(settings.project_root)
 
-    snapshot: dict = {"db": await _db_counts(pool)}
+    snapshot: dict = {"db": await _db_counts(pool), "swarm_health": await _swarm_health(pool)}
 
     roadmap = _read_roadmap(project_root)
     if roadmap is not None:
@@ -159,10 +214,21 @@ def summarize_snapshot(snapshot: dict) -> str:
     agent_total = sum(r["count"] for r in db.get("agents_by_role_level", []))
     n_dags = len(snapshot.get("dags", []))
     n_commits = len(snapshot.get("recent_commits", []) or [])
+
+    swarm_health = snapshot.get("swarm_health", [])
+    ungraduated_roles = sorted(
+        {
+            h["role"]
+            for h in swarm_health
+            if h["level"] == "amateur" and h["count"] > 0 and not h["graduated_amateurs"]
+        }
+    )
+    swarm_note = f"; no amateur graduations yet in: {', '.join(ungraduated_roles)}" if ungraduated_roles else ""
+
     return (
         f"{entity_total} entities across {len(db.get('entities_by_source_type', []))} "
         f"source/type pairs, {agent_total} registered agents, {n_dags} DAGs, "
-        f"{n_commits} recent commits observed"
+        f"{n_commits} recent commits observed{swarm_note}"
     )
 
 

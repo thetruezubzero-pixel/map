@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app import db
 from app.agent_swarm.models.agent_weight import meets_graduation_criteria
 from app.agent_swarm.services import heirloom_sync
-from app.agent_swarm.services.swarm_coordinator import ensure_default_agents
+from app.agent_swarm.services.swarm_coordinator import ensure_default_agents, shape_task_row
 
 router = APIRouter(tags=["agent_swarm"])
 
@@ -125,33 +125,33 @@ async def get_agent(agent_id: UUID, task_limit: int = 20) -> AgentDetail:
 
 
 @router.get("/swarm")
-async def swarm_activity(limit: int = 50) -> dict:
-    """Live swarm activity feed -- recent consensus rounds across every
-    role, most recent first. Used by the /swarm dashboard route."""
+async def swarm_activity(limit: int = 50, job_id: UUID | None = None) -> dict:
+    """Live swarm activity feed -- recent consensus rounds, most recent
+    first. Used by the /swarm dashboard route (all roles/jobs) and by the
+    research job detail page (pass `job_id` to scope to one job's own
+    chain -- see also GET /research/{job_id}/trace for that job's full
+    reasoning timeline including audit-log entries)."""
     pool = await db.get_pool()
-    rows = await pool.fetch(
-        """
-        SELECT id, job_id, role, agents_involved, votes, consensus_output,
-               winning_agent_id, reward_applied, created_at
-        FROM task_history ORDER BY created_at DESC LIMIT $1
-        """,
-        min(limit, 200),
-    )
-    return {
-        "tasks": [
-            {
-                "id": str(r["id"]),
-                "job_id": str(r["job_id"]) if r["job_id"] else None,
-                "role": r["role"],
-                "agent_count": len(r["agents_involved"]),
-                "votes": json.loads(r["votes"]) if isinstance(r["votes"], str) else r["votes"],
-                "winning_agent_id": str(r["winning_agent_id"]) if r["winning_agent_id"] else None,
-                "reward_applied": r["reward_applied"],
-                "created_at": r["created_at"].isoformat(),
-            }
-            for r in rows
-        ]
-    }
+    if job_id is not None:
+        rows = await pool.fetch(
+            """
+            SELECT id, job_id, role, agents_involved, votes, consensus_output,
+                   winning_agent_id, reward_applied, created_at
+            FROM task_history WHERE job_id = $1 ORDER BY created_at DESC LIMIT $2
+            """,
+            job_id,
+            min(limit, 200),
+        )
+    else:
+        rows = await pool.fetch(
+            """
+            SELECT id, job_id, role, agents_involved, votes, consensus_output,
+                   winning_agent_id, reward_applied, created_at
+            FROM task_history ORDER BY created_at DESC LIMIT $1
+            """,
+            min(limit, 200),
+        )
+    return {"tasks": [shape_task_row(r) for r in rows]}
 
 
 @router.get("/training")

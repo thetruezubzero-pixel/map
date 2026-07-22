@@ -119,6 +119,25 @@ async def ensure_default_agents(pool, user_id: str | None = None) -> dict[str, l
     return result
 
 
+def shape_task_row(r) -> dict:
+    """Row -> API dict for one task_history row. Shared by `/swarm`
+    (app/routers/agent_swarm.py) and `/research/{job_id}/trace`
+    (app/routers/research.py) so both surfaces render one consensus round
+    identically instead of each re-deriving the shape independently."""
+    import json as _json
+
+    return {
+        "id": str(r["id"]),
+        "job_id": str(r["job_id"]) if r["job_id"] else None,
+        "role": r["role"],
+        "agent_count": len(r["agents_involved"]),
+        "votes": _json.loads(r["votes"]) if isinstance(r["votes"], str) else r["votes"],
+        "winning_agent_id": str(r["winning_agent_id"]) if r["winning_agent_id"] else None,
+        "reward_applied": r["reward_applied"],
+        "created_at": r["created_at"].isoformat(),
+    }
+
+
 async def _load_agents(pool, role: str, user_id: str | None) -> list:
     return await pool.fetch(
         """
@@ -348,18 +367,91 @@ async def run_data_retriever_single(pool, plan: ResearchPlan, job_id: UUID | Non
     return records
 
 
+# Only these two roles run amateur shadow-training at all -- data_retriever
+# has no amateur tier in _default_roster (deterministic tool execution,
+# no consensus/graduation concept), so it's excluded from spawning.
+_SPAWNABLE_ROLES = ("query_analyzer", "result_synthesizer")
+
+
+async def _maybe_spawn_amateur(pool, role: str, user_id: str | None, parent_agent_id: UUID | None) -> None:
+    """After a task settles, keep a role's shadow-mode training pipeline
+    fed: if this (role, user_id) roster has zero amateurs left (every
+    prior one graduated, or none were ever seeded), spawn exactly one
+    replacement so training doesn't silently stop once a role's amateurs
+    all graduate. Bounded to one level, one spawn per empty-slot
+    detection -- never recursive, never a new actuarial/coordinator tier,
+    and the re-entry guard is simply that a fresh amateur brings the
+    count back above zero, so this can't loop."""
+    if role not in _SPAWNABLE_ROLES:
+        return
+
+    amateur_count = await pool.fetchval(
+        "SELECT count(*) FROM agent_registry WHERE role = $1 AND user_id IS NOT DISTINCT FROM $2 AND level = 'amateur'",
+        role,
+        user_id,
+    )
+    if amateur_count > 0:
+        return
+
+    mentor_row = await pool.fetchrow(
+        "SELECT id FROM agent_registry WHERE role = $1 AND user_id IS NOT DISTINCT FROM $2 AND level = 'actuarial' LIMIT 1",
+        role,
+        user_id,
+    )
+    if mentor_row is None:
+        return  # no senior agent yet to mentor a new trainee against
+
+    settings = get_settings()
+    new_row = await pool.fetchrow(
+        """
+        INSERT INTO agent_registry (name, role, level, model, user_id, parent_agent_id, mentor_agent_id)
+        VALUES ($1, $2, 'amateur', $3, $4, $5, $6)
+        RETURNING id
+        """,
+        f"{role}-amateur-{settings.openrouter_fast_model}-spawned",
+        role,
+        settings.openrouter_fast_model,
+        user_id,
+        parent_agent_id,
+        mentor_row["id"],
+    )
+
+    from app import db as _db
+
+    await _db.write_audit_log(
+        None,
+        "swarm_coordinator",
+        "agent_spawned",
+        {
+            "role": role,
+            "user_id": user_id,
+            "new_agent_id": str(new_row["id"]),
+            "parent_agent_id": str(parent_agent_id) if parent_agent_id else None,
+            "mentor_agent_id": str(mentor_row["id"]),
+        },
+    )
+    logger.info(
+        "swarm_coordinator: spawned replacement amateur %s for role=%s user_id=%s",
+        new_row["id"],
+        role,
+        user_id,
+    )
+
+
 async def finalize_task(pool, task_id: UUID, *, succeeded: bool, ground_truth: dict | None = None) -> int:
     """Call once a task's outcome is known (a human confirms/rejects the
     research_jobs review, or the job fails outright). Applies
-    credit_assigner rewards and marks the task as settled so a retry
-    can't double-apply them. Returns the number of agents rewarded."""
+    credit_assigner rewards, marks the task as settled so a retry can't
+    double-apply them, and -- if this leaves the role's (role, user_id)
+    roster with zero amateurs -- spawns one replacement trainee (see
+    _maybe_spawn_amateur). Returns the number of agents rewarded."""
     import json as _json
 
     from app.agent_swarm.models.consensus_vote import Vote as _Vote
     from app.agent_swarm.services.credit_assigner import apply_rewards, compute_rewards
 
     task = await pool.fetchrow(
-        "SELECT votes, consensus_output, winning_agent_id, reward_applied FROM task_history WHERE id = $1",
+        "SELECT role, votes, consensus_output, winning_agent_id, reward_applied FROM task_history WHERE id = $1",
         task_id,
     )
     if task is None or task["reward_applied"]:
@@ -393,4 +485,13 @@ async def finalize_task(pool, task_id: UUID, *, succeeded: bool, ground_truth: d
     await pool.execute(
         "UPDATE task_history SET reward_applied = true, ground_truth = $2 WHERE id = $1", task_id, ground_truth
     )
+
+    user_row = await pool.fetchrow("SELECT user_id FROM agent_registry WHERE id = $1", votes[0].agent_id)
+    await _maybe_spawn_amateur(
+        pool,
+        task["role"],
+        user_row["user_id"] if user_row else None,
+        task["winning_agent_id"],
+    )
+
     return len(events)
