@@ -485,12 +485,21 @@ category as the zoning/census-tract records Phase 6 already ingests.
   for chip/NPU/CPU/GPU-related filings so they're findable as a filtered
   subset -- no new data source, just better tagging of what's already
   ingested.
-- **Cross-source blending**: once the above land, link a business's FCC
-  license / nearby substation to its existing `research_entities` row
-  (same `entity_relationships`/`same_as` resolution machinery Phase 3
-  already built for corporate parent/subsidiary matching) so a company
-  shows up connected to its RF/electrical infrastructure records instead
-  of as a disconnected row.
+- **Built**: cross-source blending for the FCC piece --
+  `fcc_spectrum_licensing_dag.py`'s `link_to_business_entities` task
+  links a business's FCC license to its existing `research_entities` row
+  by exact normalized-name match (`app.graph.normalize.normalize_name`,
+  the same function `entity_resolution_dag.py` uses for business-to-
+  business dedup), written as a new, distinct
+  `entity_relationships.relation_type` ('holds_fcc_license') rather than
+  `same_as` -- an FCC filing and a business record are related, not the
+  same real-world entity, so overloading same_as would have been
+  semantically wrong. Confirmed live end-to-end against a real Postgres
+  instance: a seeded business + matching FCC filing produced a real
+  `entity_relationships` row, and re-running the insert was correctly a
+  no-op (idempotent). Blending for utility/substation records (once that
+  data source lands) follows the identical pattern -- a new task, same
+  normalize_name-based matching, a new relation_type.
 
 ## Explicit non-goals (require a written scope decision to ever revisit)
 
