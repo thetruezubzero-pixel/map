@@ -1,5 +1,13 @@
 FROM python:3.11-slim
 WORKDIR /app
+# git: architect_committer.py (app/agent_swarm/services/) shells out to
+# real `git` commands (fetch/checkout/commit/push) for the Architect's
+# commit/PR pipeline -- python:3.11-slim doesn't include it by default,
+# confirmed live (`docker run --rm python:3.11-slim which git` finds
+# nothing). Without this, POST /architect/run's commit step would fail
+# with "git: command not found" the moment a real GITHUB_TOKEN and
+# ARCHITECT_AUTO_COMMIT_ENABLED=true actually let it try.
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 # sentence-transformers (app/search/embeddings.py) pulls in torch, and
 # the default PyPI torch wheel bundles full CUDA runtime libraries
