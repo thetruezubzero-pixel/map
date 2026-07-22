@@ -6,6 +6,15 @@ tags every record with `source`/`license`, runs it through
 `common.pii_scrub.scrub_record`) -> `load_records` (upserts into Postgres
 via `common.db.upsert_entities`).
 
+Two DAGs (`census_tract_boundary_sync`, `zoning_districts_sync`) write
+real polygon geometry into a separate table, `research_entity_boundaries`
+(`apps/gateway/migrations/0010_entity_boundaries.sql`), via
+`common.db.upsert_boundaries` instead -- `research_entities.geom` is
+Point-only by design (see `census_tiger_sync`'s and `fema_flood_hazard_sync`'s
+docstrings), so tract/zoning polygons get their own table rather than
+widening that column's type. Read via the gateway's `GET /boundaries`
+route (`apps/gateway/src/routes/boundaries.rs`).
+
 | DAG | Source | Schedule | entity_type written | API key |
 |---|---|---|---|---|
 | `osm_ingestion` | Nominatim (OSM) | `@daily` | `poi`, `location` | none (real User-Agent required) |
@@ -18,13 +27,17 @@ via `common.db.upsert_entities`).
 | `data_gov_search_sync` | Data.gov (CKAN `package_search`) | `@weekly` | `government_filing` | none |
 | `fema_flood_hazard_sync` | FEMA NFHL (flood hazard zones) | `@monthly` | `location` | none |
 | `noaa_alerts_sync` | NOAA/NWS active weather alerts | `@hourly` | `location` | none (real User-Agent required) |
+| `gtfs_transit_sync` | GTFS static feed (Metrolink) | `@monthly` | `poi` | none |
+| `census_tract_boundary_sync` | Census TIGERweb (tract polygons) | `@monthly` | n/a -- writes `research_entity_boundaries` | none |
+| `zoning_districts_sync` | NYC DCP zoning (`nyzd`) | `@monthly` | n/a -- writes `research_entity_boundaries` | none |
 | `entity_resolution` | (internal) `research_entities` dedup pass | `@daily` | n/a -- writes `entity_relationships`/`entity_resolution_candidates` | none |
 | `elasticsearch_sync` | (internal) `research_entities` -> ES mirror | `@hourly` | n/a -- syncs `aether_entities` ES index | none |
 | `project_architect_cycle` | (internal) triggers `POST /architect/run` | `@daily` | n/a -- writes `project_snapshots`/`project_plans`/`project_plan_actions` | `JWT_SECRET` (mints its own short-lived token) |
 
-All new sources are free and require no paid tier. `sec_edgar_ingestion`
-and `osm_ingestion` are the two that gate on request identity rather than
-an API key -- see the policy note below. `entity_resolution` and
+All new sources are free and require no paid tier. `sec_edgar_ingestion`,
+`osm_ingestion`, and `gtfs_transit_sync` are the ones that gate on request
+identity rather than an API key -- see the policy note below.
+`entity_resolution` and
 `elasticsearch_sync` don't call an external source at all; they operate on
 data already in Postgres (see `apps/api/python/app/graph/resolve.py` and
 `apps/api/python/app/search/elasticsearch_setup.py`).
@@ -40,6 +53,7 @@ export GATEWAY_DATABASE_URL=postgres://aether:aether@localhost:5432/aether
 export NOMINATIM_USER_AGENT="YourApp/0.1 (contact: you@yourdomain.org)"  # real contact required, see below
 export EDGAR_IDENTITY="YourApp ops@yourdomain.org"                       # required by SEC's fair-access policy
 export NOAA_NWS_USER_AGENT="YourApp/0.1 (contact: you@yourdomain.org)"   # same policy as Nominatim, see below
+export GTFS_USER_AGENT="YourApp/0.1 (contact: you@yourdomain.org)"       # Metrolink's feed 403s a generic httpx UA, see below
 export NEWSAPI_KEY=...
 export OPENCORPORATES_API_KEY=...
 
@@ -51,14 +65,17 @@ Seed queries/search terms are read from Airflow Variables (JSON list, one
 per DAG: `osm_seed_queries`, `newsapi_search_terms`,
 `opencorporates_search_terms`, `sec_edgar_tickers`, `census_county_queries`,
 `usgs_seed_points`, `gdelt_search_terms`, `data_gov_search_terms`,
-`fema_seed_points`, `noaa_seed_points`) with small hardcoded defaults as a
-fallback so every DAG runs out of the box.
+`fema_seed_points`, `noaa_seed_points`, `gtfs_feeds`,
+`census_tract_counties`, `zoning_seed_bboxes`) with small hardcoded
+defaults as a fallback so every DAG runs out of the box.
 
-**Nominatim, SEC EDGAR, and NOAA/NWS all require a real, identifying
-requester.** Nominatim's and NWS's usage policies reject generic
-placeholder User-Agents (e.g. `*@example.com`, 403); SEC EDGAR requires
-`EDGAR_IDENTITY` to be set at all or EdgarTools calls will fail. Use a
-real, reachable contact in all three.
+**Nominatim, SEC EDGAR, NOAA/NWS, and Metrolink's GTFS feed all require a
+real, identifying requester.** Nominatim's and NWS's usage policies reject
+generic placeholder User-Agents (e.g. `*@example.com`, 403); SEC EDGAR
+requires `EDGAR_IDENTITY` to be set at all or EdgarTools calls will fail;
+confirmed live, Metrolink's feed 403s httpx's generic default User-Agent
+specifically (not a policy document, an observed block), but accepts any
+identifying one. Use a real, reachable contact in all four.
 
 **GDELT rate-limits aggressively** on repeated calls from the same IP;
 `gdelt_events_dag.py` fails soft per search term (logs a warning, keeps

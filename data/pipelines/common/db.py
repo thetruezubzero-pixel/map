@@ -63,3 +63,48 @@ def upsert_entities(records: list[dict[str, Any]]) -> int:
         return inserted
     finally:
         conn.close()
+
+
+def upsert_boundaries(records: list[dict[str, Any]]) -> int:
+    """Each record: name, boundary_type ('census_tract'|'zoning'), source,
+    license, geojson_geometry (a GeoJSON Polygon or MultiPolygon dict),
+    metadata. Idempotent on (source, boundary_type, name) -- see
+    apps/gateway/migrations/0010_entity_boundaries.sql for the unique
+    constraint and the reasoning for keeping polygon boundaries in their
+    own table rather than research_entities (Point-only).
+
+    Returns the number of rows actually inserted (duplicates are skipped,
+    not counted).
+    """
+    if not records:
+        return 0
+
+    conn = get_connection()
+    try:
+        inserted = 0
+        with conn, conn.cursor() as cur:
+            for record in records:
+                cur.execute(
+                    """
+                    INSERT INTO research_entity_boundaries
+                        (name, boundary_type, source, license, geom, metadata)
+                    VALUES (
+                        %s, %s, %s, %s,
+                        ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)),
+                        %s
+                    )
+                    ON CONFLICT (source, boundary_type, name) DO NOTHING
+                    """,
+                    [
+                        record["name"],
+                        record["boundary_type"],
+                        record["source"],
+                        record.get("license"),
+                        json.dumps(record["geojson_geometry"]),
+                        json.dumps(record.get("metadata", {})),
+                    ],
+                )
+                inserted += cur.rowcount
+        return inserted
+    finally:
+        conn.close()

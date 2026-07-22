@@ -230,12 +230,25 @@ records. See `apps/api/python/app/agent_swarm/introspection.py`,
   agents), but that widening is a future, separate decision, not
   something this phase does on its own.
 
-## Phase 6 (future, needs credentials/legal review)
+## Phase 6 (partially built; remainder needs credentials/legal review)
 
+- **Built**: GTFS transit feeds (`gtfs_transit_sync` -- static stop data,
+  no schema change, lands in `research_entities` like any other point
+  source) and real census-tract/zoning polygon ingestion
+  (`census_tract_boundary_sync`, `zoning_districts_sync`), storing actual
+  polygon geometry -- not just centroids -- in a new
+  `research_entity_boundaries` table
+  (`apps/gateway/migrations/0010_entity_boundaries.sql`) with a GIST index
+  for `ST_Intersects` point-in-polygon joins, exposed via `GET
+  /boundaries`. This unlocks the spatial-join/choropleth groundwork this
+  item originally called for; a frontend choropleth layer consuming it is
+  still a separate, unbuilt task. Only one seed source is wired per
+  boundary type so far (NYC DCP zoning, Census tracts for NYC/SF
+  counties) -- extending coverage means adding more seed
+  counties/bboxes/agencies, following the existing DAG pattern, not new
+  architecture.
 - County assessor, PACER ingestion (still business/property records —
   requires credentialing and a legal review of each source's ToS)
-- GTFS transit feeds, census-tract/zoning polygon ingestion (unlocks
-  ENRICH spatial joins and choropleth layers)
 - Flink JDBC connector once a Flink-2.x-compatible release exists (would
   replace the Postgres-side alert_dispatcher.py matching step with a live
   join inside Flink itself)
