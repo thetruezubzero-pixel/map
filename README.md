@@ -20,15 +20,22 @@ URL you can open on any device, including a phone browser.
    - `NOMINATIM_USER_AGENT` (required) — a real identifying contact
      string, e.g. `YourApp/1.0 (contact: you@example.com)`. Nominatim's
      usage policy blocks generic/placeholder values.
-   - `VITE_MAPBOX_ACCESS_TOKEN` (optional, strongly recommended) — a
-     [free Mapbox token](https://account.mapbox.com/access-tokens/).
+   - `OPENROUTER_API_KEY` (recommended -- needed for the AI research
+     side) — without it, the map/search/entity browsing all work fine,
+     but the multi-agent research pipeline (`POST /research`, the
+     `/swarm` dashboard) fails with a real 401 from OpenRouter. Not a
+     free service -- needs an account with funded credits.
+   - `VITE_MAPBOX_ACCESS_TOKEN` (recommended -- needed for the map to
+     render) — a [free Mapbox token](https://account.mapbox.com/access-tokens/).
      Without it the app still runs, but the map panel shows a "set your
-     token" placeholder instead of an actual map — everything else
-     (search, entities, agents, swarm, alerts) works either way.
+     token" placeholder instead of an actual map.
+   - `NEWSAPI_KEY` / `OPENCORPORATES_API_KEY` (fully optional) — widen
+     which public-record sources the research agents can pull from. Each
+     is just skipped if unset, no error.
 
    (Codespaces secrets are injected as environment variables automatically
-   — `docker-compose.yml`/the web image's build args read all three from
-   the environment.)
+   — `docker-compose.yml`/the web image's build args read all of these
+   from the environment.)
 
 2. **Open a Codespace** — from the repo's `Code` button, or from the
    GitHub mobile app: open this repo → the `...` menu → **Open with
