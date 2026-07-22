@@ -285,7 +285,22 @@ services:
       NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:?set a real contact -- Nominatim blocks placeholder domains}
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       OPENCORPORATES_API_KEY: ${OPENCORPORATES_API_KEY:-}
+      # SEC EDGAR already fails soft (returns [] and logs, doesn't crash
+      # the DAG) when this is unset -- see sec_edgar_ingestion_dag.py --
+      # so this stays optional like NEWSAPI_KEY/OPENCORPORATES_API_KEY
+      # above, not a required `:?`.
+      EDGAR_IDENTITY: ${EDGAR_IDENTITY:-}
       GATEWAY_DATABASE_URL: postgres://aether:aether@postgres:5432/aether
+      # A "connect the dots" audit found this container never received
+      # JWT_SECRET at all, even though project_architect_cycle_dag.py
+      # needs it to mint the token POST /architect/run verifies (the
+      # gateway/python-api services below already require the same var).
+      # The DAG itself fails soft on a missing value ({"skipped": "..."}),
+      # so this wasn't a crash -- just the daily Architect cycle silently
+      # never actually running under a stock `docker compose up`. Reusing
+      # the same required `${JWT_SECRET}` the other two services already
+      # need means this costs the operator nothing extra to set.
+      JWT_SECRET: ${JWT_SECRET:?set a real secret -- see apps/gateway/.env.example}
     volumes:
       - ./data/pipelines/dags:/opt/airflow/dags
     ports:
