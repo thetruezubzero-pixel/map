@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "PropertyChange",
+  "namespace": "os.aether.streaming",
+  "doc": "aether.property_changes -- Phase 4 free-source scope is OSM changesets only (new buildings, road changes, POI add/remove). County assessor ownership-transfer feeds are Phase 5+ (paid).",
+  "fields": [
+    { "name": "event_id", "type": "string", "doc": "UUID, dedup key" },
+    { "name": "source", "type": "string" },
+    { "name": "change_type", "type": { "type": "enum", "name": "PropertyChangeType", "symbols": ["NEW_BUILDING", "ROAD_CHANGE", "POI_ADDED", "POI_REMOVED", "BOUNDARY_CHANGE"] } },
+    { "name": "name", "type": "string" },
+    { "name": "lat", "type": ["null", "double"], "default": null },
+    { "name": "lon", "type": ["null", "double"], "default": null },
+    { "name": "detected_at", "type": "string", "doc": "ISO 8601" },
+    { "name": "license", "type": ["null", "string"], "default": null },
+    { "name": "metadata_json", "type": "string", "default": "{}" }
+  ]
+}

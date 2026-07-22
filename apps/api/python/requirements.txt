@@ -1,0 +1,22 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.5
+pydantic-settings==2.7.1
+httpx==0.28.1
+asyncpg==0.30.0
+redis[hiredis]==5.2.1
+sentence-transformers==3.3.1
+qdrant-client==1.12.2
+elasticsearch==8.17.0
+numpy==2.2.1
+python-dotenv==1.0.1
+tenacity==9.0.0
+
+# Streaming (Phase 4) -- see app/streaming/
+confluent-kafka[avro,schemaregistry]==2.15.0
+fastavro==1.12.2
+feedparser==6.0.12
+vaderSentiment==3.3.2
+
+# Agent swarm (Phase 5) -- see app/agent_swarm/
+cryptography==49.0.0

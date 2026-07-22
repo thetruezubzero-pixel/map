@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "UserAlert",
+  "namespace": "os.aether.streaming",
+  "doc": "aether.user_alerts -- output of the Flink CEP jobs / ksqlDB filters, consumed by the alert dispatch service (in-app WS, webhook, email).",
+  "fields": [
+    { "name": "alert_id", "type": "string" },
+    { "name": "subscription_id", "type": "string" },
+    { "name": "user_id", "type": "string" },
+    { "name": "severity", "type": { "type": "enum", "name": "AlertSeverity", "symbols": ["INFO", "WARNING", "CRITICAL"] } },
+    { "name": "title", "type": "string" },
+    { "name": "description", "type": "string" },
+    { "name": "source_topic", "type": "string" },
+    { "name": "source_event_id", "type": ["null", "string"], "default": null },
+    { "name": "entity_id", "type": ["null", "string"], "default": null },
+    { "name": "lat", "type": ["null", "double"], "default": null },
+    { "name": "lon", "type": ["null", "double"], "default": null },
+    { "name": "created_at", "type": "string" },
+    { "name": "channels", "type": { "type": "array", "items": "string" }, "default": [] }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/scope-guard.sh\"" },
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/secret-scrub.sh\"" },
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-gate.sh\"" }
+        ]
+      }
+    ]
+  }
+}

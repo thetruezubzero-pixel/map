@@ -1,0 +1,6 @@
+apache-airflow==3.0.0
+httpx==0.28.1
+psycopg2-binary==2.9.10
+edgartools==5.43.0
+asyncpg==0.30.0
+elasticsearch==8.17.0

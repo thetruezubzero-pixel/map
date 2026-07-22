@@ -1,0 +1,14 @@
+-- Critical performance finding from audit: every geo query in the app
+-- (gateway /search's ST_DWithin/ST_Distance, and the entity-resolution
+-- address-proximity signal) casts geom to `geography` for accurate
+-- meter-based distance, but the only spatial index
+-- (research_entities_geom_idx) was built on the raw `geometry` column.
+-- PostGIS geometry and geography GIST indexes use different operator
+-- classes, so a `geom::geography` expression in a query is NOT served by
+-- a plain `geometry` GIST index -- confirmed via EXPLAIN ANALYZE showing
+-- a ~3s parallel Seq Scan for a 2km-radius query against 55k rows that
+-- should have been a near-instant index lookup.
+--
+-- Fix: a functional GIST index on the exact `geom::geography` expression
+-- used by every query, so the planner can match it.
+CREATE INDEX IF NOT EXISTS research_entities_geog_idx ON research_entities USING GIST ((geom::geography));

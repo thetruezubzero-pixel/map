@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "PermitIssuance",
+  "namespace": "os.aether.streaming",
+  "doc": "aether.permit_issuances -- city permits / zoning changes via Data.gov. NOTE: catalog.data.gov's CKAN API has been down since Phase 3 (see ROADMAP.md); this schema/producer is ready but real events depend on that API being restored upstream.",
+  "fields": [
+    { "name": "event_id", "type": "string" },
+    { "name": "source", "type": "string" },
+    { "name": "permit_type", "type": "string" },
+    { "name": "description", "type": "string" },
+    { "name": "jurisdiction", "type": ["null", "string"], "default": null },
+    { "name": "lat", "type": ["null", "double"], "default": null },
+    { "name": "lon", "type": ["null", "double"], "default": null },
+    { "name": "zip_code", "type": ["null", "string"], "default": null },
+    { "name": "detected_at", "type": "string" },
+    { "name": "license", "type": ["null", "string"], "default": null },
+    { "name": "metadata_json", "type": "string", "default": "{}" }
+  ]
+}

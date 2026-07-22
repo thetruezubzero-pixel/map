@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "DetectedPattern",
+  "namespace": "os.aether.streaming",
+  "aliases": ["org.apache.flink.avro.generated.record"],
+  "doc": "aether.detected_patterns -- internal, not one of the 6 user-facing topics. Raw output of the Flink CEP/anomaly/correlation job in streaming/flink/cep_alerts.py, before per-user subscription matching. apps/api/python/app/streaming/producers/alert_dispatcher.py (Task 28) reads this topic and writes the real per-user aether.user_alerts events, since Flink 2.3.0 has no compatible flink-connector-jdbc release to join against Postgres directly -- see streaming/README.md. Every field here is a nullable string, matching Flink's own auto-derived schema (Flink SQL columns are nullable by default). The `aliases` entry is required, not cosmetic: Flink's avro-confluent sink auto-names its generated record `org.apache.flink.avro.generated.record`, and plain Avro schema resolution requires the reader and writer record *names* to match (or alias to each other) even when every field is otherwise identical -- confirmed live via SchemaResolutionError (\"... is not ...\" on structurally-equal schemas) before this alias was added.",
+  "fields": [
+    { "name": "pattern_id", "type": ["null", "string"], "default": null },
+    { "name": "pattern_type", "type": ["null", "string"], "default": null, "doc": "FILING_CLUSTER | FILING_VOLUME_SPIKE | REGISTRATION_NEWS_CORRELATION -- plain string, not an Avro enum: Flink SQL has no ENUM column type, and an enum here can't be read back through a STRING-typed Table column (Avro enum/string aren't resolution-compatible) -- confirmed live via AvroTypeException before this was changed." },
+    { "name": "severity", "type": ["null", "string"], "default": null, "doc": "INFO | WARNING | CRITICAL, see pattern_type doc for why this is a plain string" },
+    { "name": "title", "type": ["null", "string"], "default": null },
+    { "name": "description", "type": ["null", "string"], "default": null },
+    { "name": "source_topic", "type": ["null", "string"], "default": null },
+    { "name": "entity_name", "type": ["null", "string"], "default": null },
+    { "name": "cik", "type": ["null", "string"], "default": null },
+    { "name": "evidence_json", "type": ["null", "string"], "default": null },
+    { "name": "detected_at", "type": ["null", "string"], "default": null },
+    { "name": "window_start", "type": ["null", "string"], "default": null },
+    { "name": "window_end", "type": ["null", "string"], "default": null }
+  ]
+}

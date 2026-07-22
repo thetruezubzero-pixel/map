@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "EntityResolvedEvent",
+  "namespace": "os.aether.streaming",
+  "doc": "aether.entity_resolved -- output of apps/api/python/app/graph/resolve.py's resolution pass. Business entities only; never carries an individual's name (see CLAUDE.md guardrail on the officer-overlap signal).",
+  "fields": [
+    { "name": "event_id", "type": "string" },
+    { "name": "entity_a_id", "type": "string" },
+    { "name": "entity_b_id", "type": "string" },
+    { "name": "entity_a_name", "type": "string" },
+    { "name": "entity_b_name", "type": "string" },
+    { "name": "confidence", "type": "double" },
+    { "name": "match_basis_json", "type": "string" },
+    { "name": "status", "type": { "type": "enum", "name": "ResolutionStatus", "symbols": ["AUTO_CONFIRMED", "PENDING_REVIEW"] } },
+    { "name": "detected_at", "type": "string" }
+  ]
+}
