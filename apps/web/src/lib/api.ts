@@ -397,8 +397,10 @@ export interface SwarmTask {
   created_at: string
 }
 
-export function getSwarmActivity(limit = 50): Promise<{ tasks: SwarmTask[] }> {
-  return pyRequest(`/swarm?limit=${limit}`)
+export function getSwarmActivity(limit = 50, jobId?: string): Promise<{ tasks: SwarmTask[] }> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (jobId) params.set('job_id', jobId)
+  return pyRequest(`/swarm?${params.toString()}`)
 }
 
 export interface TrainingEntry {
