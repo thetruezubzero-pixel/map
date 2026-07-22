@@ -1,0 +1,28 @@
+name: Gateway (Rust)
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "apps/gateway/**", ".github/workflows/gateway.yml" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ "apps/gateway/**", ".github/workflows/gateway.yml" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/gateway
+      - name: cargo check
+        run: cargo check --verbose
+      - name: cargo test
+        run: cargo test --verbose
