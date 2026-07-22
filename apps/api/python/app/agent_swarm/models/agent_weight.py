@@ -102,3 +102,31 @@ def meets_graduation_criteria(
         return False
     accuracy = total_successes / total_tasks
     return accuracy >= min_accuracy and consecutive_successes >= min_consecutive
+
+
+def meets_coordinator_promotion_criteria(
+    total_successes: int,
+    total_tasks: int,
+    consecutive_successes: int,
+    *,
+    min_accuracy: float = 0.97,
+    min_consecutive: int = 150,
+    min_total_tasks: int = 200,
+) -> bool:
+    """'coordinator' has existed in agent_registry's schema and this
+    module's own docstrings since Phase 5 ("amateur/actuarial/
+    coordinator agent levels" -- ROADMAP.md), but nothing in this
+    codebase ever actually promoted an agent to it -- confirmed by
+    grepping the whole tree for a literal 'coordinator' level INSERT/
+    UPDATE and finding none. This is that promotion criteria: a real bar
+    stricter than amateur->actuarial graduation in all three dimensions
+    (higher accuracy, more consecutive successes, and a minimum total
+    task count graduation alone doesn't require), so "better than
+    itself" means a proven, extensive track record, not just clearing
+    the same bar again. Deliberately a pure function like
+    meets_graduation_criteria, so swarm_coordinator.py's spawn decision
+    stays a real, checkable calculation, not a model's self-assessment."""
+    if total_tasks < min_total_tasks:
+        return False
+    accuracy = total_successes / total_tasks
+    return accuracy >= min_accuracy and consecutive_successes >= min_consecutive

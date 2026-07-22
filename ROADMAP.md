@@ -150,7 +150,14 @@ frontend for the dashboard.
   (`apps/gateway/migrations/0008_agent_swarm.sql`).
 - Amateur/actuarial/coordinator agent levels; amateurs run in real
   shadow mode (zero vote weight) until graduating at 90% accuracy AND 50
-  consecutive successes, both required.
+  consecutive successes, both required. `coordinator` existed in the
+  schema/CHECK constraint from this phase on, but nothing actually
+  promoted an agent to it until Phase 5c's `_maybe_spawn_coordinator`
+  (see below) -- a stricter, separate bar (97% accuracy, 150 consecutive
+  successes, 200 minimum total tasks) than amateur->actuarial
+  graduation, and `consensus_vote._break_tie` now prefers a coordinator
+  vote over an actuarial one the same way actuarial already outranked
+  amateur.
 - `data_retriever` deliberately stays single-agent, not swarmed --
   deterministic tool execution has no judgment call for multiple
   instances to vote on.
@@ -320,6 +327,94 @@ mechanism -- given they process user chat messages and external public
 records, both attacker-reachable text -- is a separate, larger decision,
 not taken here, and would need its own explicit scope review given the
 different risk shape.
+
+## Phase 5d (built) -- coordinator promotion + full source visibility
+
+Two more explicit scope decisions, made by the repo owner in the same
+conversation as Phase 5c: agents should be able to produce a genuinely
+more senior successor than themselves, and the Architect should be able
+to see real source file contents, not just a curated summary.
+
+**Coordinator promotion** (`swarm_coordinator._maybe_spawn_coordinator`,
+`agent_weight.meets_coordinator_promotion_criteria`): `coordinator` has
+existed in `agent_registry`'s schema since Phase 5, but nothing ever
+promoted an agent to it before this. An actuarial agent that clears a
+real, stricter-than-graduation bar (97% accuracy, 150 consecutive
+successes, 200 minimum total tasks -- all three required, same "both
+conditions, not either" shape as amateur->actuarial graduation) spawns
+exactly one coordinator successor for its (role, user_id), using
+`OPENROUTER_COORDINATOR_MODEL` when an operator has actually configured
+a stronger model (falling back to `openrouter_default_model` otherwise
+-- "better than itself" is only claimed when it's real).
+`consensus_vote._break_tie` now prefers a coordinator vote over an
+actuarial one, the same way actuarial already outranked amateur. Pure
+registry bookkeeping, same trust level as `_maybe_spawn_amateur` --
+grants no git/PR/filesystem capability, so none of Phase 5c's guardrails
+apply to it. A security review of this phase's own diff, before it was
+committed, found the "does a coordinator already exist" check was a
+plain count-then-insert with no supporting constraint -- two concurrent
+`finalize_task` calls for the same (role, user_id) could each pass the
+check before either INSERT committed. Fixed with a real DB-level
+guarantee: `agent_registry_one_coordinator_per_role_user_idx`
+(`0012_coordinator_race_guard.sql`), a `NULLS NOT DISTINCT` partial
+unique index (the platform-default roster uses `user_id IS NULL`, and
+plain `UNIQUE` treats every `NULL` as distinct from every other `NULL`
+-- confirmed live that a naive `UNIQUE` index would NOT have closed this
+for the most common case), paired with `ON CONFLICT ... DO NOTHING` at
+the insert site so the losing side of a race no-ops cleanly instead of
+erroring.
+
+**Full source visibility** (`introspection._read_full_source_tree`,
+gated by `AGENT_FULL_SOURCE_VISIBILITY_ENABLED`, default off): the
+Architect's snapshot previously included only a curated summary (DB
+counts, DAG/route inventories, ROADMAP.md excerpts, git log subjects),
+specifically to bound cost and avoid ever handing a file to OpenRouter
+that might contain a secret. This phase adds the option to include real
+file contents, line-by-line, for every file in the repo except ones
+excluded by a hard denylist (not an allowlist, since "every file" is the
+point): any `.env*` file except `.env.example`, anything with
+secret/credential/password in its name, `.key`/`.pem`/`.p12`/`.pfx`
+files, and anything under `.git`/`node_modules`/`target`/`dist`/build or
+cache directories -- checked before any file is read, unconditionally,
+regardless of this flag. Capped at `AGENT_FULL_SOURCE_VISIBILITY_MAX_CHARS`
+(default 2MB) total, not per file -- confirmed live this repo's own
+readable source is ~694KB across 180 files as of this phase, well within
+that cap; if a future repo's source ever exceeds it, `truncated: true`
+is set on the snapshot (and surfaced in `summarize_snapshot`'s one-line
+summary) rather than silently dropping files with no signal. This is a
+real cost (every architect cycle would embed the whole repo in its
+OpenRouter prompt) and third-party-exposure tradeoff versus the curated
+summary, which is exactly why it defaults off -- turning it on is a
+separate, deliberate choice for whoever runs this deployment, same
+pattern as every other capability flag in this codebase
+(`ARCHITECT_AUTO_COMMIT_ENABLED`, `AGENT_AUTO_MERGE_ENABLED`). A security
+review of this feature before it was committed found and fixed two real
+gaps in `_is_source_readable`'s denylist: the secret-shaped-token check
+(`secret`/`credential`/`password`) only inspected the leaf filename, so
+an innocuously-named file inside a secret-shaped directory (e.g.
+`secrets/db.yml`) would have slipped through -- now every path
+component is checked, directories included. Separately,
+`_read_full_source_tree` now resolves each candidate path and confirms
+it still lands inside `project_root` before reading it, since
+`is_file()`/`read_text()` both follow symlinks but the denylist itself
+only inspects a symlink's own name -- a symlinked path pointing outside
+the checked-out tree would otherwise have its target's content read and
+embedded in the snapshot. No such symlink or secrets-shaped directory
+exists in this repo today (confirmed by enumerating every file the
+denylist currently lets through), but both are real gap classes, not
+hypothetical ones, closed before this flag could ever be turned on
+against a real deployment.
+
+**User-facing communication stays single-voice and English-only.**
+`chat_agent`, `result_synthesizer`, and `project_architect`'s system
+prompts each now explicitly require their free-text output (chat
+replies, report summaries, plan rationale/notes) to be in English
+regardless of the input language or any internal representation used
+between agents. Each of these surfaces already produces exactly one
+synthesized response per turn/job/cycle -- the swarm's individual votes
+are visible on `/swarm`/`/agents` as a transparency/debugging view, not
+as multiple agents "talking to" the user simultaneously; that
+distinction is deliberate and unchanged by this phase.
 
 ## Phase 6 (partially built; remainder needs credentials/legal review)
 

@@ -145,6 +145,92 @@ def _read_roadmap(project_root: Path) -> dict | None:
     }
 
 
+# Phase 5d: full source-tree visibility -- see ROADMAP.md "Phase 5d:
+# full source visibility" for the scope decision this implements. A
+# denylist, not an allowlist, since "every file" is the point -- but
+# anything secret-shaped is excluded outright, unconditionally, before
+# any content is read, regardless of AGENT_FULL_SOURCE_VISIBILITY_ENABLED.
+_EXCLUDED_DIR_NAMES = {
+    ".git", "node_modules", "target", "dist", "build", "__pycache__",
+    ".venv", "venv", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+}
+_SOURCE_SUFFIXES = {".py", ".rs", ".ts", ".tsx", ".sql", ".md", ".toml", ".yml", ".yaml"}
+_SECRET_SHAPED_TOKENS = ("secret", "credential", "password")
+_SECRET_SUFFIXES = (".key", ".pem", ".p12", ".pfx")
+
+
+def _is_source_readable(path: Path) -> bool:
+    """Confirmed by a security review: the original version only checked
+    _SECRET_SHAPED_TOKENS against the leaf filename, so a directory like
+    `secrets/` or `config/credentials/` with innocuously-named files
+    inside (e.g. `secrets/db.yml`) would slip through -- no such
+    directory exists in this repo today, but it's a real gap, not a
+    hypothetical one, for any future secrets-holding directory. Now
+    checks every path component, directories included, not just the
+    file's own name."""
+    parts_lower = [p.lower() for p in path.parts]
+    if any(part in _EXCLUDED_DIR_NAMES for part in parts_lower):
+        return False
+    if any(token in part for part in parts_lower for token in _SECRET_SHAPED_TOKENS):
+        return False
+    name_lower = path.name.lower()
+    if name_lower.startswith(".env") and name_lower != ".env.example":
+        return False
+    if name_lower.endswith(_SECRET_SUFFIXES):
+        return False
+    return path.suffix in _SOURCE_SUFFIXES
+
+
+def _read_full_source_tree(project_root: Path, *, max_total_chars: int) -> dict:
+    """Reads real source file contents, line-by-line, not a summary --
+    only when settings.agent_full_source_visibility_enabled (default
+    off; see build_project_snapshot). Capped at max_total_chars TOTAL
+    (not per file) so this can't silently blow past a model's context
+    budget or balloon OpenRouter token cost -- confirmed this repo's
+    own source (excluding node_modules/target/.git) is ~1MB/~17k lines
+    as of this phase, so the default 2MB cap covers it with headroom,
+    but the cap (and the `truncated` flag when it's hit) exists so
+    growth doesn't silently start dropping files with no signal."""
+    if not project_root.exists():
+        return {"files": [], "total_files": 0, "total_chars": 0, "truncated": False}
+
+    resolved_root = project_root.resolve()
+    files: list[dict] = []
+    total_chars = 0
+    truncated = False
+    for path in sorted(project_root.rglob("*")):
+        if not path.is_file() or not _is_source_readable(path):
+            continue
+        # Confirmed by a security review: is_file()/read_text() both
+        # follow symlinks, but _is_source_readable only inspects the
+        # symlink's own name/suffix -- a symlinked path pointing outside
+        # project_root would have its *target's* content read otherwise.
+        # No such symlink exists in this repo today, but this check
+        # doesn't depend on that staying true.
+        resolved_path = path.resolve()
+        if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
+            logger.warning("full-source-tree skipped a path resolving outside project root: %s", path)
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            logger.warning("full-source-tree read skipped %s: %s", path, exc)
+            continue
+        if total_chars + len(text) > max_total_chars:
+            truncated = True
+            break
+        files.append(
+            {
+                "path": str(path.relative_to(project_root)),
+                "content": text,
+                "line_count": text.count("\n") + 1,
+            }
+        )
+        total_chars += len(text)
+
+    return {"files": files, "total_files": len(files), "total_chars": total_chars, "truncated": truncated}
+
+
 def _read_dag_inventory(project_root: Path) -> list[str]:
     dags_dir = project_root / "data" / "pipelines" / "dags"
     if not dags_dir.exists():
@@ -202,6 +288,11 @@ async def build_project_snapshot(pool) -> dict:
     snapshot["gateway_routes"] = GATEWAY_ROUTES
     snapshot["python_api_routers"] = PYTHON_API_ROUTERS
 
+    if settings.agent_full_source_visibility_enabled:
+        snapshot["full_source_tree"] = _read_full_source_tree(
+            project_root, max_total_chars=settings.agent_full_source_visibility_max_chars
+        )
+
     return snapshot
 
 
@@ -225,10 +316,16 @@ def summarize_snapshot(snapshot: dict) -> str:
     )
     swarm_note = f"; no amateur graduations yet in: {', '.join(ungraduated_roles)}" if ungraduated_roles else ""
 
+    source_tree = snapshot.get("full_source_tree")
+    source_note = ""
+    if source_tree is not None:
+        truncated_note = " (truncated -- hit the char cap)" if source_tree.get("truncated") else ""
+        source_note = f"; full source visible: {source_tree.get('total_files', 0)} files{truncated_note}"
+
     return (
         f"{entity_total} entities across {len(db.get('entities_by_source_type', []))} "
         f"source/type pairs, {agent_total} registered agents, {n_dags} DAGs, "
-        f"{n_commits} recent commits observed{swarm_note}"
+        f"{n_commits} recent commits observed{swarm_note}{source_note}"
     )
 
 

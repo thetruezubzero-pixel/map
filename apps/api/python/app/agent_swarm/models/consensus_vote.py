@@ -143,21 +143,29 @@ def weighted_consensus(
     )
 
 
+_ARBITER_PRIORITY = ("coordinator", "actuarial")
+
+
 def _break_tie(candidates: list[Vote]) -> Vote:
     """Picks the vote credited as the winning group's representative
     (winning_agent_id/consensus_output). Despite the name, this is not
     conditioned on an actual weight tie -- it unconditionally prefers
-    any actuarial-level vote present in `candidates` over every
-    non-actuarial vote, tied or not (per spec, actuarial agents "can
-    approve/reject amateur agent outputs" -- they're the designated
-    arbiter), falling back to highest raw weight only when no
-    actuarial vote is present. `candidates` is always exactly the
+    the most senior level present in `candidates` over every less-senior
+    vote, tied or not (per spec, actuarial agents "can approve/reject
+    amateur agent outputs" -- they're a designated arbiter; `coordinator`
+    is the tier above that, only reachable via
+    swarm_coordinator._maybe_spawn_coordinator's stricter, proven-track-
+    record promotion bar, so it outranks actuarial the same way actuarial
+    outranks amateur), falling back to highest raw weight only when
+    neither senior level is present. `candidates` is always exactly the
     winning group (weighted_consensus never calls this with anything
-    else), so this is "who gets credit for this win," not narrowly
-    "who wins a tie.\""""
-    actuarial = [v for v in candidates if v.agent_level == "actuarial"]
-    pool = actuarial or candidates
-    return max(pool, key=lambda v: v.weight)
+    else), so this is "who gets credit for this win," not narrowly "who
+    wins a tie.\""""
+    for level in _ARBITER_PRIORITY:
+        senior = [v for v in candidates if v.agent_level == level]
+        if senior:
+            return max(senior, key=lambda v: v.weight)
+    return max(candidates, key=lambda v: v.weight)
 
 
 def monte_carlo_consensus_risk(

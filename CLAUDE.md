@@ -97,6 +97,18 @@ docker-compose.yml   Full local dev stack
   a further written scope decision in ROADMAP.md, per the same norm as
   every other guardrail in this section -- see ROADMAP.md "Phase 5b: the
   Architect" and "Phase 5c: widening safe_to_autoimplement".
+- `introspection._read_full_source_tree` (gated behind
+  `AGENT_FULL_SOURCE_VISIBILITY_ENABLED`, default off -- see ROADMAP.md
+  "Phase 5d") reads real file contents for the Architect's snapshot.
+  Its denylist (`_is_source_readable`) is the actual security boundary,
+  not the flag: any `.env*` file except `.env.example`, anything with
+  secret/credential/password in its name, and `.key`/`.pem`/`.p12`/`.pfx`
+  files must never be read, unconditionally, regardless of the flag or
+  any caller. If you add a new secret-shaped file convention to this
+  repo (a new credentials format, a new key file extension), add it to
+  `_is_source_readable`'s denylist in the same commit -- don't rely on
+  the flag defaulting off as the only protection, since the whole point
+  of this feature is that someone will eventually turn it on.
 
 ## Architecture / trust boundaries
 

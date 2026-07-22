@@ -192,6 +192,7 @@ services:
       OPENROUTER_DEFAULT_MODEL: ${OPENROUTER_DEFAULT_MODEL:-anthropic/claude-3.5-sonnet}
       OPENROUTER_FAST_MODEL: ${OPENROUTER_FAST_MODEL:-anthropic/claude-3.5-haiku}
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-openai/gpt-4o}
+      OPENROUTER_COORDINATOR_MODEL: ${OPENROUTER_COORDINATOR_MODEL:-}
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       OPENCORPORATES_API_KEY: ${OPENCORPORATES_API_KEY:-}
       # Heirloom export/import (agent weight snapshots, AES-256-GCM) is
@@ -230,6 +231,11 @@ services:
       AGENT_AUTO_MERGE_ENABLED: ${AGENT_AUTO_MERGE_ENABLED:-false}
       AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD: ${AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD:-0.9}
       AGENT_AUTO_MERGE_MIN_TRACK_RECORD: ${AGENT_AUTO_MERGE_MIN_TRACK_RECORD:-10}
+      # Phase 5d -- see ROADMAP.md "Phase 5d". Default off; the denylist
+      # in introspection._is_source_readable (never .env/secrets/keys)
+      # applies regardless of this flag.
+      AGENT_FULL_SOURCE_VISIBILITY_ENABLED: ${AGENT_FULL_SOURCE_VISIBILITY_ENABLED:-false}
+      AGENT_FULL_SOURCE_VISIBILITY_MAX_CHARS: ${AGENT_FULL_SOURCE_VISIBILITY_MAX_CHARS:-2000000}
     volumes:
       # Dev-only: gives introspection.py real ROADMAP.md/DAG/git-log
       # access and gives architect_committer.py a real working tree to

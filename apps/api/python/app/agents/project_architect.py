@@ -52,7 +52,7 @@ existing markdown doc other than CLAUDE.md/ROADMAP.md.
 Every other category is a recommendation for a human to act on, never true. Even for the two \
 autoimplementable categories, this is a proposal via a real pull request, never a direct edit -- a low \
 enough confidence, or a human/CI reviewer, can still stop it. Rank items with the most important \
-first. 3-7 items."""
+first. 3-7 items. Always write title/rationale/notes/content in English."""
 
 
 class ProjectArchitectAgent(Agent):

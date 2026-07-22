@@ -2,7 +2,12 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.agent_swarm.services.swarm_coordinator import _SPAWNABLE_ROLES, _maybe_spawn_amateur, shape_task_row
+from app.agent_swarm.services.swarm_coordinator import (
+    _SPAWNABLE_ROLES,
+    _maybe_spawn_amateur,
+    _maybe_spawn_coordinator,
+    shape_task_row,
+)
 
 
 def test_shape_task_row_shapes_all_fields():
@@ -71,3 +76,97 @@ class _NoQueryPool:
 
 def test_maybe_spawn_amateur_noops_for_non_spawnable_role():
     asyncio.run(_maybe_spawn_amateur(_NoQueryPool(), "data_retriever", None, None))
+
+
+class _FakeCoordinatorPool:
+    """Simulates agent_registry's two relevant queries (the existing-
+    coordinator count and the qualifying-actuarial lookup) plus the
+    guarded INSERT, without touching a real database -- covers the
+    guard logic a security review flagged as untested (unlike
+    _maybe_spawn_amateur, _maybe_spawn_coordinator had zero test
+    coverage before this)."""
+
+    def __init__(self, existing_count, qualifying_row, insert_result):
+        self.existing_count = existing_count
+        self.qualifying_row = qualifying_row
+        self.insert_result = insert_result
+        self.qualifying_query_calls = 0
+        self.insert_query_calls = 0
+
+    async def fetchval(self, query, *args):
+        return self.existing_count
+
+    async def fetchrow(self, query, *args):
+        if "INSERT INTO agent_registry" in query:
+            self.insert_query_calls += 1
+            return self.insert_result
+        self.qualifying_query_calls += 1
+        return self.qualifying_row
+
+
+def test_maybe_spawn_coordinator_skips_when_one_already_exists():
+    pool = _FakeCoordinatorPool(existing_count=1, qualifying_row=None, insert_result=None)
+    asyncio.run(_maybe_spawn_coordinator(pool, "query_analyzer", None))
+    assert pool.qualifying_query_calls == 0  # short-circuits before looking for a candidate at all
+    assert pool.insert_query_calls == 0
+
+
+def test_maybe_spawn_coordinator_skips_when_no_actuarial_agent_exists():
+    pool = _FakeCoordinatorPool(existing_count=0, qualifying_row=None, insert_result=None)
+    asyncio.run(_maybe_spawn_coordinator(pool, "query_analyzer", None))
+    assert pool.qualifying_query_calls == 1
+    assert pool.insert_query_calls == 0
+
+
+def test_maybe_spawn_coordinator_skips_when_track_record_is_too_weak():
+    weak_row = {"id": uuid4(), "total_successes": 95, "total_tasks": 100, "consecutive_successes": 50}
+    pool = _FakeCoordinatorPool(existing_count=0, qualifying_row=weak_row, insert_result=None)
+    asyncio.run(_maybe_spawn_coordinator(pool, "query_analyzer", None))
+    assert pool.qualifying_query_calls == 1
+    assert pool.insert_query_calls == 0  # 95/100 clears amateur graduation but not coordinator promotion
+
+
+def test_maybe_spawn_coordinator_inserts_when_track_record_clears_the_bar(monkeypatch):
+    strong_row = {"id": uuid4(), "total_successes": 245, "total_tasks": 250, "consecutive_successes": 200}
+    pool = _FakeCoordinatorPool(
+        existing_count=0, qualifying_row=strong_row, insert_result={"id": uuid4()}
+    )
+
+    audit_calls = []
+
+    async def _fake_write_audit_log(job_id, agent_name, action, detail):
+        audit_calls.append((agent_name, action, detail))
+
+    import app.db as db_module
+
+    monkeypatch.setattr(db_module, "write_audit_log", _fake_write_audit_log)
+
+    asyncio.run(_maybe_spawn_coordinator(pool, "query_analyzer", None))
+
+    assert pool.qualifying_query_calls == 1
+    assert pool.insert_query_calls == 1
+    assert len(audit_calls) == 1
+    assert audit_calls[0][1] == "coordinator_spawned"
+
+
+def test_maybe_spawn_coordinator_noops_silently_when_it_loses_the_insert_race(monkeypatch):
+    """ON CONFLICT DO NOTHING (0012_coordinator_race_guard.sql) returns
+    no row when a concurrent call already spawned the coordinator first
+    -- confirmed this doesn't write an audit log entry for a spawn that
+    didn't actually happen."""
+    strong_row = {"id": uuid4(), "total_successes": 245, "total_tasks": 250, "consecutive_successes": 200}
+    pool = _FakeCoordinatorPool(existing_count=0, qualifying_row=strong_row, insert_result=None)
+
+    audit_calls = []
+
+    async def _fake_write_audit_log(job_id, agent_name, action, detail):
+        audit_calls.append((agent_name, action, detail))
+
+    import app.db as db_module
+
+    monkeypatch.setattr(db_module, "write_audit_log", _fake_write_audit_log)
+
+    asyncio.run(_maybe_spawn_coordinator(pool, "query_analyzer", None))
+
+    assert pool.insert_query_calls == 1
+    assert audit_calls == []
