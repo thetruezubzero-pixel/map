@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import {
   forceCenter,
   forceLink,
@@ -104,7 +104,13 @@ export function EntityGraphView({ entityId }: { entityId: string }) {
   }
 
   return (
-    <svg width={WIDTH} height={HEIGHT} className="rounded-md border border-border bg-surface">
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      className="rounded-md border border-border bg-surface"
+      role="group"
+      aria-label={`Entity relationship graph, ${simNodes.length} node${simNodes.length === 1 ? '' : 's'}`}
+    >
       {simLinks.map((link, i) => {
         const a = positions.get(link.source.id)
         const b = positions.get(link.target.id)
@@ -131,6 +137,15 @@ export function EntityGraphView({ entityId }: { entityId: string }) {
             transform={`translate(${pos.x},${pos.y})`}
             className="cursor-pointer"
             onClick={() => setSelectedEntityId(node.id)}
+            role="button"
+            tabIndex={0}
+            aria-label={`Select entity ${node.name} (${node.entity_type.replace('_', ' ')})`}
+            onKeyDown={(e: KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setSelectedEntityId(node.id)
+              }
+            }}
           >
             <circle
               r={node.id === entityId ? 9 : 6}

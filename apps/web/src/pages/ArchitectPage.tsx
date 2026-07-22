@@ -33,11 +33,25 @@ export function ArchitectPage() {
   const [running, setRunning] = useState(false)
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('newest')
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const refresh = () => {
-    listSnapshots(10).then(setSnapshots).catch(() => setSnapshots([]))
-    listPlans(10).then(setPlans).catch(() => setPlans([]))
-    listPlanActions(50).then(setActions).catch(() => setActions([]))
+    setLoadError(null)
+    const onLoadError = (err: unknown) =>
+      setLoadError(err instanceof Error ? err.message : 'failed to load architect data')
+
+    listSnapshots(10).then(setSnapshots).catch((err) => {
+      setSnapshots([])
+      onLoadError(err)
+    })
+    listPlans(10).then(setPlans).catch((err) => {
+      setPlans([])
+      onLoadError(err)
+    })
+    listPlanActions(50).then(setActions).catch((err) => {
+      setActions([])
+      onLoadError(err)
+    })
   }
 
   useEffect(refresh, [])
@@ -88,6 +102,12 @@ export function ArchitectPage() {
         merges; that always goes through the same human/CI-gated review every other change in this repo does. See
         ROADMAP.md "Phase 5b: the Architect".
       </p>
+
+      {loadError && (
+        <p className="mb-4 text-sm text-red-400" role="alert">
+          Bad Gateway -- failed to load architect data: {loadError}
+        </p>
+      )}
 
       <div className="mb-6 flex flex-wrap items-end gap-2">
         <div>

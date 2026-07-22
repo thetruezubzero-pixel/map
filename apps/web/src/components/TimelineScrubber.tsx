@@ -20,6 +20,8 @@ export function TimelineScrubber() {
       <span className="text-xs text-text-muted">{MIN_YEAR}</span>
       <input
         type="range"
+        aria-label="As-of year -- filters records to their state at this point in time"
+        aria-valuetext={`${year}`}
         min={MIN_YEAR}
         max={CURRENT_YEAR}
         step={1}

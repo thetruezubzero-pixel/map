@@ -24,6 +24,28 @@ export function SearchBar() {
   const [open, setOpen] = useState(false)
   const debouncedQuery = useDebounced(filters.query, 300)
   const requestId = useRef(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // The suggestions dropdown otherwise has no dismiss path besides picking
+  // a suggestion -- confirmed live it stayed open (and visually overlapped
+  // the results panel below it) indefinitely on outside click or Escape.
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
 
   // Geocode address-autocomplete suggestions need a substantive query (a
   // 1-2 char geocode lookup is noise), but entity search results must
@@ -64,7 +86,7 @@ export function SearchBar() {
   }, [debouncedQuery, filters.source, filters.entityType, filters.dateFrom, filters.dateTo])
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-3">
         <Search className="h-4 w-4 text-text-muted" aria-hidden="true" />
         <Input
