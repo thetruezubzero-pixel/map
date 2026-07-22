@@ -152,7 +152,29 @@ docker-compose.yml   Full local dev stack
   `PgListener::connect(&state.config.database_url)` opens a dedicated
   connection outside the pool instead. Any future long-held DB session
   (another LISTEN/NOTIFY consumer, a streaming export, etc.) must do the
-  same, not reuse `state.db`.
+  same, not reuse `state.db`. `/ws/alerts` is now behind `rate_limit.rs`
+  (moved into its own router group in `main.rs`, kept out of the
+  request-timeout layer since a WebSocket connection is meant to stay
+  open indefinitely) -- closing the "never behind rate_limit.rs either"
+  gap this bullet used to flag as still open.
+- **A blocking call (`subprocess.run`, sync file I/O over a network
+  mount, etc.) must never run directly inside `async def` code in
+  `python-api`.** It runs as a single uvicorn worker (no `--workers`
+  flag, confirmed in `Dockerfile`), so one asyncio event loop serves
+  every concurrent request -- a blocking call anywhere freezes all of
+  them for its duration, not just the request that made it. Found live
+  in `architect_committer.py`/`change_proposer.py`'s `_run_git` and
+  `introspection.py`'s `_recent_git_log`: a real git subprocess call
+  (fetch/push, run on every Architect cycle) froze `/health` and every
+  other in-flight request for the whole call -- confirmed by a repro
+  where a concurrent "ticker" coroutine's beats stopped advancing
+  entirely until the blocking call returned. Fixed with
+  `asyncio.to_thread(...)` around every such call. Same class of bug as
+  the `PgListener`/`PgPool` issue above -- a shared, single resource (the
+  one event loop, there) monopolized by one request -- just a thread
+  executor instead of a dedicated connection as the fix shape. Any new
+  code that shells out or does blocking I/O must use `asyncio.to_thread`
+  (or a real async client library) the same way.
 - **Geo queries must be indexed on the same expression they filter on.**
   `research_entities`'s spatial queries cast `geom::geography` (for
   accurate meter-based `ST_DWithin`/`ST_Distance`), which a plain

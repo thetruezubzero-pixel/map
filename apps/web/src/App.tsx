@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal, List, X } from 'lucide-react'
 import { SearchBar } from '@/components/SearchBar'
 import { FilterPanel, DateRangeInputs } from '@/components/FilterPanel'
@@ -33,10 +33,33 @@ function App() {
   const setSelectedEntityId = useMapStore((s) => s.setSelectedEntityId)
   const unreadAlertCount = useAlertStore((s) => s.unreadCount)
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null)
+  const dialogCloseButtonRef = useRef<HTMLButtonElement>(null)
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null)
+
+  // The mobile filters/results overlay is `role="dialog" aria-modal="true"`,
+  // but confirmed live it wasn't actually behaving like one: opening it
+  // never moved focus in (so a keyboard/screen-reader user stayed on
+  // whichever header control they'd just activated), closing it never
+  // restored focus to that trigger, and the header/main behind the
+  // backdrop stayed in the Tab order the whole time (a `fixed inset-0`
+  // backdrop only blocks clicks/visuals, not Tab, which follows DOM order
+  // rather than z-index) -- so `aria-modal="true"` was not actually true.
+  useEffect(() => {
+    if (mobilePanel) {
+      lastFocusedElementRef.current = document.activeElement as HTMLElement | null
+      dialogCloseButtonRef.current?.focus()
+    } else {
+      lastFocusedElementRef.current?.focus()
+      lastFocusedElementRef.current = null
+    }
+  }, [mobilePanel])
 
   return (
     <div className="flex h-screen flex-col bg-background text-text">
-      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 print:hidden lg:flex-nowrap lg:gap-4">
+      <header
+        inert={mobilePanel !== null}
+        className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 print:hidden lg:flex-nowrap lg:gap-4"
+      >
         <div className="flex min-w-0 items-center gap-3 lg:gap-4">
           <h1 className="shrink-0 whitespace-nowrap text-lg font-semibold text-text">Aether Sovereign OS</h1>
           <DashboardNav />
@@ -99,7 +122,7 @@ function App() {
           </div>
         </aside>
 
-        <main className="relative min-w-0 flex-1 print:hidden">
+        <main inert={mobilePanel !== null} className="relative min-w-0 flex-1 print:hidden">
           <Suspense
             fallback={
               <div className="flex h-full w-full items-center justify-center bg-surface text-sm text-text-muted">
@@ -161,6 +184,7 @@ function App() {
             />
             <div className="relative ml-auto flex h-full w-[85vw] max-w-sm flex-col overflow-y-auto bg-background p-4 shadow-xl">
               <Button
+                ref={dialogCloseButtonRef}
                 variant="ghost"
                 size="icon"
                 aria-label="Close panel"

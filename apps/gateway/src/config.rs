@@ -14,6 +14,13 @@ pub struct Config {
     pub rate_limit_burst: u32,
     pub rate_limit_per_sec: u32,
     pub authed_rate_limit_per_sec: u32,
+    // A readiness review found the outbound reqwest::Client (geocode.rs/
+    // research.rs) and the axum router itself had no timeout at all --
+    // tower-http's "timeout" feature was already enabled in Cargo.toml
+    // but never wired up. A hung upstream (Nominatim/Photon/python-api)
+    // could otherwise hold a request open indefinitely.
+    pub http_client_timeout_secs: u64,
+    pub request_timeout_secs: u64,
     pub kafka_bootstrap_servers: String,
     pub schema_registry_url: String,
     pub ksqldb_url: String,
@@ -80,6 +87,14 @@ impl Config {
             ksqldb_url: env::var("KSQLDB_URL").unwrap_or_else(|_| "http://localhost:8088".to_string()),
             flink_rest_url: env::var("FLINK_REST_URL")
                 .unwrap_or_else(|_| "http://localhost:8081".to_string()),
+            http_client_timeout_secs: env::var("HTTP_CLIENT_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+            request_timeout_secs: env::var("REQUEST_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(30),
         }
     }
 }

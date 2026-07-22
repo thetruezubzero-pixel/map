@@ -45,6 +45,7 @@ decides it feels confident":
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -55,6 +56,7 @@ from pathlib import Path
 import httpx
 
 from app.agent_swarm.services.architect_committer import (
+    GIT_WORKING_TREE_LOCK,
     ArchitectCommitError,
     _assert_never_main,
     _run_git,
@@ -195,61 +197,69 @@ async def propose_change(
     branch_name = f"agent/{role}/{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{slug}"
     _assert_never_main(branch_name)
 
-    try:
-        _run_git(project_root, "fetch", "origin", "main")
-        _run_git(project_root, "checkout", "-B", branch_name, "origin/main")
-        await log("branch_created", branch_name=branch_name)
+    async with GIT_WORKING_TREE_LOCK:
+        try:
+            await _run_git(project_root, "fetch", "origin", "main")
+            await _run_git(project_root, "checkout", "-B", branch_name, "origin/main")
+            await log("branch_created", branch_name=branch_name)
 
-        target_path = _assert_resolves_within_project_root(project_root, file_path)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(new_content, encoding="utf-8")
-        _run_git(project_root, "add", file_path)
-        _run_git(
-            project_root,
-            "-c", "user.name=Aether Agent",
-            "-c", "user.email=agent@aether-sovereign.local",
-            "commit",
-            "-m",
-            f"chore({role}): {title}\n\nProposed autonomously -- see ROADMAP.md "
-            '"Phase 5c: widening safe_to_autoimplement".',
-        )
-        commit_sha = _run_git(project_root, "rev-parse", "HEAD")
-        await log("committed", branch_name=branch_name, commit_sha=commit_sha)
+            target_path = _assert_resolves_within_project_root(project_root, file_path)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_text(new_content, encoding="utf-8")
+            await _run_git(project_root, "add", file_path)
+            await _run_git(
+                project_root,
+                "-c", "user.name=Aether Agent",
+                "-c", "user.email=agent@aether-sovereign.local",
+                "commit",
+                "-m",
+                f"chore({role}): {title}\n\nProposed autonomously -- see ROADMAP.md "
+                '"Phase 5c: widening safe_to_autoimplement".',
+            )
+            commit_sha = await _run_git(project_root, "rev-parse", "HEAD")
+            await log("committed", branch_name=branch_name, commit_sha=commit_sha)
 
-        _assert_never_main(branch_name)
-        auth_header = base64.b64encode(f"x-access-token:{settings.github_token}".encode()).decode()
-        _run_git(
-            project_root,
-            "-c", f"http.extraHeader=Authorization: Basic {auth_header}",
-            "push", f"https://github.com/{settings.github_repo}.git", f"{branch_name}:{branch_name}",
-            redact=settings.github_token,
-        )
-        await log("pushed", branch_name=branch_name, commit_sha=commit_sha)
+            _assert_never_main(branch_name)
+            auth_header = base64.b64encode(f"x-access-token:{settings.github_token}".encode()).decode()
+            await _run_git(
+                project_root,
+                "-c", f"http.extraHeader=Authorization: Basic {auth_header}",
+                "push", f"https://github.com/{settings.github_repo}.git", f"{branch_name}:{branch_name}",
+                redact=settings.github_token,
+            )
+            await log("pushed", branch_name=branch_name, commit_sha=commit_sha)
 
-        body = (
-            f"Autonomous proposal from the `{agent_name}` agent (`{role}` role).\n\n"
-            f"{rationale}\n\n"
-            f"Confidence {confidence:.2f} x agent weight {agent_weight:.2f} = effective score "
-            f"{effective_score:.2f} (auto-merge threshold: {settings.agent_auto_merge_confidence_threshold:.2f}).\n\n"
-            'See ROADMAP.md "Phase 5c: widening safe_to_autoimplement" for the allowlist and '
-            "safeguards governing what this pipeline may touch."
-        )
-        pr_url, pr_number = await _open_pull_request(settings, branch_name, f"chore({role}): {title}"[:120], body)
-        await log("pr_opened", branch_name=branch_name, commit_sha=commit_sha, pr_url=pr_url)
+            body = (
+                f"Autonomous proposal from the `{agent_name}` agent (`{role}` role).\n\n"
+                f"{rationale}\n\n"
+                f"Confidence {confidence:.2f} x agent weight {agent_weight:.2f} = effective score "
+                f"{effective_score:.2f} (auto-merge threshold: {settings.agent_auto_merge_confidence_threshold:.2f}).\n\n"
+                'See ROADMAP.md "Phase 5c: widening safe_to_autoimplement" for the allowlist and '
+                "safeguards governing what this pipeline may touch."
+            )
+            pr_url, pr_number = await _open_pull_request(settings, branch_name, f"chore({role}): {title}"[:120], body)
+            await log("pr_opened", branch_name=branch_name, commit_sha=commit_sha, pr_url=pr_url)
 
-        if auto_merge_eligible and settings.agent_auto_merge_enabled:
-            await _merge_pull_request(settings, pr_number)
-            await log("merged", branch_name=branch_name, commit_sha=commit_sha, pr_url=pr_url)
-            return {"action": "merged", "pr_url": pr_url}
+            if auto_merge_eligible and settings.agent_auto_merge_enabled:
+                await _merge_pull_request(settings, pr_number)
+                await log("merged", branch_name=branch_name, commit_sha=commit_sha, pr_url=pr_url)
+                return {"action": "merged", "pr_url": pr_url}
 
-        return {"action": "pr_opened", "pr_url": pr_url}
-    except (ArchitectCommitError, ChangeProposalError, httpx.HTTPError) as exc:
-        logger.error("change proposal failed: %s", exc)
-        await log("failed", branch_name=branch_name, detail={"error": str(exc)})
-        return {"action": "failed", "reason": str(exc)}
-    finally:
-        subprocess.run(["git", "-C", str(project_root), "checkout", "main"], capture_output=True, timeout=15)
-        subprocess.run(["git", "-C", str(project_root), "branch", "-D", branch_name], capture_output=True, timeout=15)
+            return {"action": "pr_opened", "pr_url": pr_url}
+        except (ArchitectCommitError, ChangeProposalError, httpx.HTTPError) as exc:
+            logger.error("change proposal failed: %s", exc)
+            await log("failed", branch_name=branch_name, detail={"error": str(exc)})
+            return {"action": "failed", "reason": str(exc)}
+        finally:
+            # Moved off the event loop -- same reasoning as _run_git in
+            # architect_committer.py (a security review confirmed a blocking
+            # subprocess.run here freezes this single-worker service for its
+            # whole duration).
+            def _cleanup() -> None:
+                subprocess.run(["git", "-C", str(project_root), "checkout", "main"], capture_output=True, timeout=15)
+                subprocess.run(["git", "-C", str(project_root), "branch", "-D", branch_name], capture_output=True, timeout=15)
+
+            await asyncio.to_thread(_cleanup)
 
 
 async def _open_pull_request(settings, branch_name: str, title: str, body: str) -> tuple[str, int]:

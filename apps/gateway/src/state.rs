@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use governor::{
     clock::DefaultClock,
@@ -32,13 +33,29 @@ impl AppState {
         let user_quota = Quota::per_second(authed_per_sec).allow_burst(burst.saturating_mul(nonzero!(2u32)));
 
         Self {
-            config: Arc::new(config),
-            db,
             http: reqwest::Client::builder()
+                // A readiness review found this client (used by
+                // geocode.rs/research.rs for outbound Nominatim/Photon/
+                // python-api calls) had no timeout at all -- a hung
+                // upstream could hold a request open indefinitely.
+                .timeout(Duration::from_secs(config.http_client_timeout_secs))
                 .build()
                 .expect("failed to build http client"),
+            config: Arc::new(config),
+            db,
             ip_limiter: Arc::new(RateLimiter::keyed(ip_quota)),
             user_limiter: Arc::new(RateLimiter::keyed(user_quota)),
         }
+    }
+
+    /// Evicts stale entries from both keyed rate limiters. A readiness
+    /// review found nothing ever called governor's `retain_recent` here,
+    /// so both keyed maps (one entry per distinct IP/user ever seen)
+    /// grew without bound for the life of the process. Intended to be
+    /// called periodically from a background task (see main.rs), not
+    /// per-request.
+    pub fn cleanup_rate_limiters(&self) {
+        self.ip_limiter.retain_recent();
+        self.user_limiter.retain_recent();
     }
 }

@@ -145,7 +145,10 @@ def _prepare_fake_repo_settings(monkeypatch, tmp_path, **env_overrides):
 
 
 def _patch_git_and_github(monkeypatch, merge_calls):
-    monkeypatch.setattr(cp, "_run_git", lambda *a, **k: "fake-sha")
+    async def _fake_run_git(*a, **k):
+        return "fake-sha"
+
+    monkeypatch.setattr(cp, "_run_git", _fake_run_git)
 
     async def _fake_open_pr(settings, branch_name, title, body):
         return "https://github.com/test/repo/pull/1", 1
@@ -251,4 +254,70 @@ def test_auto_merge_fires_once_score_and_track_record_both_clear(monkeypatch, tm
     )
     assert result["action"] == "merged"
     assert merge_calls == [1]
+    config.get_settings.cache_clear()
+
+
+def test_concurrent_propose_change_calls_are_serialized_by_the_shared_lock(monkeypatch, tmp_path):
+    """A security review found propose_change and sync_project_plan_doc
+    had no concurrency guard on the shared mounted working tree -- two
+    overlapping calls could interleave checkout/commit/push against the
+    same tree. GIT_WORKING_TREE_LOCK (architect_committer.py, imported
+    here) should serialize them: confirmed by having two concurrent
+    calls each record entry/exit events into a shared list and asserting
+    one call's full event sequence completes before the other's starts,
+    never interleaved."""
+    _prepare_fake_repo_settings(
+        monkeypatch, tmp_path,
+        AGENT_AUTO_MERGE_ENABLED="false",
+        AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD="0.99",
+        AGENT_AUTO_MERGE_MIN_TRACK_RECORD="1",
+    )
+
+    events: list[str] = []
+
+    async def _fake_run_git(project_root, *args, **kwargs):
+        call_name = args[0] if args else "unknown"
+        events.append(f"start:{call_name}")
+        await asyncio.sleep(0.01)  # yield control -- gives a real race a chance to interleave
+        events.append(f"end:{call_name}")
+        return "fake-sha"
+
+    async def _fake_open_pr(settings, branch_name, title, body):
+        return "https://github.com/test/repo/pull/1", 1
+
+    monkeypatch.setattr(cp, "_run_git", _fake_run_git)
+    monkeypatch.setattr(cp, "_open_pull_request", _fake_open_pr)
+
+    async def _one_call(n: int):
+        return await propose_change(
+            _RecordingPool(),
+            agent_name=f"agent-{n}",
+            role="project_architect",
+            file_path=f"docs/example-{n}.md",
+            new_content="# hi",
+            title=f"doc {n}",
+            rationale="test",
+            confidence=0.5,
+            agent_weight=1.0,
+            agent_total_tasks=1,
+        )
+
+    async def _run_both():
+        return await asyncio.gather(_one_call(1), _one_call(2))
+
+    results = asyncio.run(_run_both())
+    assert all(r["action"] == "pr_opened" for r in results)
+
+    # Group consecutive events by which call's fetch/checkout/add/commit/
+    # push sequence they belong to isn't directly labeled, but true
+    # interleaving would show a "start" for one file appearing between
+    # another call's "start"/"end" of the *same* git subcommand name at a
+    # depth greater than 1 -- simplest real assertion: every "start:X" is
+    # immediately followed by its own "end:X" (no other call's git
+    # command sneaks in between), which only holds if the lock actually
+    # serializes the two callers' subprocess calls.
+    for i in range(0, len(events), 2):
+        assert events[i].startswith("start:")
+        assert events[i + 1].startswith("end:")
+        assert events[i].split(":", 1)[1] == events[i + 1].split(":", 1)[1]
     config.get_settings.cache_clear()

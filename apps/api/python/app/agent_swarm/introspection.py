@@ -13,6 +13,7 @@ than raising -- DB introspection still works either way.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -238,17 +239,27 @@ def _read_dag_inventory(project_root: Path) -> list[str]:
     return sorted(p.name for p in dags_dir.glob("*.py"))
 
 
-def _recent_git_log(project_root: Path, limit: int = 15) -> list[dict] | None:
+async def _recent_git_log(project_root: Path, limit: int = 15) -> list[dict] | None:
+    """Runs via asyncio.to_thread, not directly on the event loop -- a
+    security review flagged this alongside architect_committer.py's git
+    calls as blocking the single-worker service for its duration; `git
+    log` is normally fast (no network round trip, unlike fetch/push),
+    but there's no reason to leave this one call inconsistent with the
+    same fix applied everywhere else this module family shells out."""
     if not (project_root / ".git").exists():
         return None
-    try:
-        result = subprocess.run(
+
+    def _run() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
             ["git", "-C", str(project_root), "log", f"-{limit}", "--pretty=format:%H%x1f%s%x1f%an%x1f%aI"],
             capture_output=True,
             text=True,
             timeout=10,
             check=True,
         )
+
+    try:
+        result = await asyncio.to_thread(_run)
     except (subprocess.SubprocessError, OSError) as exc:
         logger.warning("git log introspection failed: %s", exc)
         return None
@@ -281,7 +292,7 @@ async def build_project_snapshot(pool) -> dict:
     if dags:
         snapshot["dags"] = dags
 
-    git_log = _recent_git_log(project_root)
+    git_log = await _recent_git_log(project_root)
     if git_log is not None:
         snapshot["recent_commits"] = git_log
 
