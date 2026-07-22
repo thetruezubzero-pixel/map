@@ -9,9 +9,11 @@ from pydantic import BaseModel
 from app import db
 from app.agent_swarm.introspection import build_project_snapshot, summarize_snapshot
 from app.agent_swarm.services.architect_committer import sync_project_plan_doc
+from app.agent_swarm.services.change_proposer import propose_change
 from app.agents.project_architect import ProjectArchitectAgent
 from app.auth import require_user_id
 from app.config import get_settings
+from app.models import PlanItemCategory
 
 router = APIRouter(tags=["architect"])
 
@@ -57,7 +59,7 @@ async def run_architect_cycle(triggered_by: str = Depends(require_user_id)) -> R
     is real, not a dry run."""
     pool = await db.get_pool()
     agent_id = await _ensure_architect_agent(pool)
-    agent_row = await pool.fetchrow("SELECT model FROM agent_registry WHERE id = $1", agent_id)
+    agent_row = await pool.fetchrow("SELECT model, current_weight FROM agent_registry WHERE id = $1", agent_id)
 
     snapshot = await build_project_snapshot(pool)
     summary = summarize_snapshot(snapshot)
@@ -83,11 +85,35 @@ async def run_architect_cycle(triggered_by: str = Depends(require_user_id)) -> R
     )
     plan_id = plan_row["id"]
 
-    await pool.execute(
-        "UPDATE agent_registry SET total_tasks = total_tasks + 1, updated_at = now() WHERE id = $1", agent_id
+    updated_row = await pool.fetchrow(
+        "UPDATE agent_registry SET total_tasks = total_tasks + 1, updated_at = now() WHERE id = $1 RETURNING total_tasks",
+        agent_id,
     )
 
     await sync_project_plan_doc(pool, plan_id, plan, summary)
+
+    # Phase 5c: documentation items the model marked safe_to_autoimplement
+    # (already defense-in-depth filtered by project_architect._parse to
+    # require a target_file + content) each get proposed as their own PR
+    # via change_proposer.py -- separate from the PROJECT_PLAN.md flow
+    # above, since these touch other allowlisted doc files, not the
+    # Architect's own status doc. agent_weight reuses this agent's own
+    # tracked agent_registry.current_weight (the same credit_assigner
+    # signal every swarm role earns), not a number the model can assert.
+    for item in plan.items:
+        if item.category == PlanItemCategory.documentation and item.safe_to_autoimplement:
+            await propose_change(
+                pool,
+                agent_name="project_architect",
+                role="project_architect",
+                file_path=item.target_file,
+                new_content=item.content,
+                title=item.title,
+                rationale=item.rationale,
+                confidence=item.confidence,
+                agent_weight=float(agent_row["current_weight"]),
+                agent_total_tasks=updated_row["total_tasks"],
+            )
 
     return RunResponse(
         snapshot_id=str(snapshot_id),

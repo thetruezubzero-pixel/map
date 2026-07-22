@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     openrouter_default_model: str = "anthropic/claude-3.5-sonnet"
     openrouter_fast_model: str = "anthropic/claude-3.5-haiku"
     openrouter_fallback_model: str = "openai/gpt-4o"
+    # Used only when swarm_coordinator.py spawns a coordinator-level
+    # agent (see meets_coordinator_promotion_criteria) -- empty means
+    # "no stronger model configured," in which case the spawn falls back
+    # to openrouter_default_model rather than claiming a capability
+    # upgrade that isn't real.
+    openrouter_coordinator_model: str = ""
 
     # Data sources (public records only)
     newsapi_key: str = ""
@@ -62,6 +68,37 @@ class Settings(BaseSettings):
     github_repo: str = "thetruezubzero-pixel/map"
     architect_auto_commit_enabled: bool = True
     jwt_secret: str = ""  # must match the gateway's JWT_SECRET; required to verify POST /architect/run callers
+
+    # Phase 5c (built) -- widening safe_to_autoimplement beyond
+    # PROJECT_PLAN.md, see app/agent_swarm/services/change_proposer.py
+    # and ROADMAP.md "Phase 5c: widening safe_to_autoimplement". Default
+    # OFF -- same kill-switch shape as architect_auto_commit_enabled:
+    # the mechanism exists in code either way, but auto-merge is inert
+    # until the repo owner deliberately opts in.
+    agent_auto_merge_enabled: bool = False
+    agent_auto_merge_confidence_threshold: float = 0.9
+    # A brand-new agent's agent_registry.current_weight starts at 1.0 --
+    # the neutral prior, not an earned track record (confirmed: nothing
+    # decays it below 1.0 until a real failure is recorded against it,
+    # per credit_assigner.py's decay-toward-neutral-prior design) -- so
+    # confidence * weight alone doesn't actually require a track record
+    # on an agent's very first cycle. This requires a minimum number of
+    # completed cycles (agent_registry.total_tasks) on top of the score
+    # threshold, so "the weight decides" can't be satisfied by a single
+    # self-reported high-confidence claim from a never-run agent.
+    agent_auto_merge_min_track_record: int = 10
+
+    # Phase 5d (built) -- full source-tree visibility for the Architect's
+    # snapshot, see app/agent_swarm/introspection.py::_read_full_source_tree
+    # and ROADMAP.md "Phase 5d: full source visibility". Default off --
+    # reading (and sending to OpenRouter) real file contents is a real
+    # cost and third-party-exposure tradeoff, not a free upgrade over the
+    # curated summary this snapshot used before. The denylist inside
+    # _read_full_source_tree (never .env/secrets/keys) applies regardless
+    # of this flag; this flag only controls whether the read happens at
+    # all.
+    agent_full_source_visibility_enabled: bool = False
+    agent_full_source_visibility_max_chars: int = 2_000_000
 
     @property
     def allowed_origins_list(self) -> list[str]:

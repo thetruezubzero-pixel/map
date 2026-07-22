@@ -9,6 +9,7 @@ from app.agent_swarm.models.agent_weight import (
     decay,
     elapsed_days,
     exploration_bonus,
+    meets_coordinator_promotion_criteria,
     meets_graduation_criteria,
     multiplicative_update,
 )
@@ -80,3 +81,43 @@ def test_meets_graduation_criteria_requires_both_accuracy_and_streak():
 
 def test_meets_graduation_criteria_no_tasks_yet():
     assert meets_graduation_criteria(total_successes=0, total_tasks=0, consecutive_successes=0) is False
+
+
+def test_meets_coordinator_promotion_criteria_is_stricter_than_graduation():
+    """A track record that clears amateur->actuarial graduation (90%/50
+    consecutive) must NOT automatically clear coordinator promotion --
+    coordinator requires a real, extensive proven track record, not just
+    the same bar again."""
+    assert meets_graduation_criteria(total_successes=95, total_tasks=100, consecutive_successes=50) is True
+    assert meets_coordinator_promotion_criteria(total_successes=95, total_tasks=100, consecutive_successes=50) is False
+
+
+def test_meets_coordinator_promotion_criteria_requires_minimum_total_tasks():
+    # High accuracy and streak, but too few total tasks -- no real track record yet.
+    assert (
+        meets_coordinator_promotion_criteria(total_successes=99, total_tasks=100, consecutive_successes=150)
+        is False
+    )
+
+
+def test_meets_coordinator_promotion_criteria_requires_all_three_conditions():
+    assert (
+        meets_coordinator_promotion_criteria(
+            total_successes=245, total_tasks=250, consecutive_successes=200
+        )
+        is True
+    )
+    # accuracy just under the bar
+    assert (
+        meets_coordinator_promotion_criteria(
+            total_successes=240, total_tasks=250, consecutive_successes=200
+        )
+        is False
+    )
+    # consecutive streak just under the bar
+    assert (
+        meets_coordinator_promotion_criteria(
+            total_successes=245, total_tasks=250, consecutive_successes=149
+        )
+        is False
+    )

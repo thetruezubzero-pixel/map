@@ -88,6 +88,28 @@ def test_weighted_consensus_tie_prefers_actuarial_agent_with_a_dissenting_group(
     assert result.consensus_output_key == "business"
 
 
+def test_weighted_consensus_tie_prefers_coordinator_over_actuarial():
+    """'coordinator' is the tier above actuarial, only reachable via
+    swarm_coordinator._maybe_spawn_coordinator's stricter promotion bar
+    -- it should outrank actuarial the same way actuarial outranks
+    amateur, even when actuarial has a higher raw weight."""
+    votes = [
+        make_vote(AGENT_A, "actuarial", 5.0, 1.0, "business"),
+        make_vote(AGENT_B, "coordinator", 2.0, 1.0, "business"),
+    ]
+    result = weighted_consensus(votes)
+    assert result.winning_agent_id == AGENT_B
+
+
+def test_weighted_consensus_falls_back_to_actuarial_when_no_coordinator_present():
+    votes = [
+        make_vote(AGENT_A, "amateur", 2.0, 1.0, "business"),
+        make_vote(AGENT_B, "actuarial", 2.0, 1.0, "business"),
+    ]
+    result = weighted_consensus(votes)
+    assert result.winning_agent_id == AGENT_B
+
+
 def test_bayesian_confidence_updates_toward_observed_reliability():
     prior = BayesianConfidence()
     assert prior.mean == pytest.approx(0.5)

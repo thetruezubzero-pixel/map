@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from app.agent_swarm.models.agent_weight import meets_graduation_criteria
+from app.agent_swarm.models.agent_weight import meets_coordinator_promotion_criteria, meets_graduation_criteria
 from app.agent_swarm.models.consensus_vote import BayesianConfidence, ConsensusResult, Vote, weighted_consensus
 from app.agent_swarm.services.credit_assigner import effective_weight
 from app.agents.query_analyzer import QueryAnalyzerAgent
@@ -438,6 +438,102 @@ async def _maybe_spawn_amateur(pool, role: str, user_id: str | None, parent_agen
     )
 
 
+async def _maybe_spawn_coordinator(pool, role: str, user_id: str | None) -> None:
+    """'coordinator' is the tier above actuarial -- present in
+    agent_registry's schema and this module's own docstrings since
+    Phase 5, but nothing ever actually created one until this function
+    (confirmed by grepping the whole tree for a real 'coordinator'
+    INSERT before this was added). An actuarial agent that clears
+    meets_coordinator_promotion_criteria (a real, checkable bar --
+    stricter accuracy, more consecutive successes, and a minimum task
+    count graduation alone doesn't require) spawns exactly one
+    coordinator successor for this (role, user_id) -- bounded the same
+    way _maybe_spawn_amateur is bounded: the "does one already exist"
+    check is the re-entry guard, so this can't spawn more than one.
+    Uses settings.openrouter_coordinator_model when an operator has
+    actually configured a stronger model, falling back to
+    openrouter_default_model otherwise -- "better than itself" is only
+    claimed when it's real."""
+    existing_coordinator = await pool.fetchval(
+        "SELECT count(*) FROM agent_registry WHERE role = $1 AND user_id IS NOT DISTINCT FROM $2 AND level = 'coordinator'",
+        role,
+        user_id,
+    )
+    if existing_coordinator > 0:
+        return
+
+    qualifying = await pool.fetchrow(
+        """
+        SELECT id, total_successes, total_tasks, consecutive_successes
+        FROM agent_registry
+        WHERE role = $1 AND user_id IS NOT DISTINCT FROM $2 AND level = 'actuarial'
+        ORDER BY total_tasks DESC
+        LIMIT 1
+        """,
+        role,
+        user_id,
+    )
+    if qualifying is None:
+        return
+    if not meets_coordinator_promotion_criteria(
+        qualifying["total_successes"], qualifying["total_tasks"], qualifying["consecutive_successes"]
+    ):
+        return
+
+    settings = get_settings()
+    model = settings.openrouter_coordinator_model or settings.openrouter_default_model
+    new_row = await pool.fetchrow(
+        """
+        INSERT INTO agent_registry (name, role, level, model, user_id, parent_agent_id)
+        VALUES ($1, $2, 'coordinator', $3, $4, $5)
+        ON CONFLICT (role, user_id) WHERE level = 'coordinator' DO NOTHING
+        RETURNING id
+        """,
+        f"{role}-coordinator-{model}-spawned",
+        role,
+        model,
+        user_id,
+        qualifying["id"],
+    )
+    if new_row is None:
+        # Lost a race with a concurrent finalize_task call for this same
+        # (role, user_id) -- the count-then-insert check above isn't
+        # itself a hard guard (confirmed by a security review: two
+        # concurrent calls can both pass it before either INSERT
+        # commits), so agent_registry_one_coordinator_per_role_user_idx
+        # (0012_coordinator_race_guard.sql) is the real, DB-enforced
+        # backstop. Whichever call wins the race spawns the coordinator;
+        # this one just no-ops rather than erroring.
+        return
+
+    from app import db as _db
+
+    await _db.write_audit_log(
+        None,
+        "swarm_coordinator",
+        "coordinator_spawned",
+        {
+            "role": role,
+            "user_id": user_id,
+            "new_agent_id": str(new_row["id"]),
+            "parent_agent_id": str(qualifying["id"]),
+            "model": model,
+            "promoted_from_track_record": {
+                "total_tasks": qualifying["total_tasks"],
+                "total_successes": qualifying["total_successes"],
+                "consecutive_successes": qualifying["consecutive_successes"],
+            },
+        },
+    )
+    logger.info(
+        "swarm_coordinator: spawned coordinator %s for role=%s user_id=%s (promoted from actuarial agent %s)",
+        new_row["id"],
+        role,
+        user_id,
+        qualifying["id"],
+    )
+
+
 async def finalize_task(pool, task_id: UUID, *, succeeded: bool, ground_truth: dict | None = None) -> int:
     """Call once a task's outcome is known (a human confirms/rejects the
     research_jobs review, or the job fails outright). Applies
@@ -487,11 +583,8 @@ async def finalize_task(pool, task_id: UUID, *, succeeded: bool, ground_truth: d
     )
 
     user_row = await pool.fetchrow("SELECT user_id FROM agent_registry WHERE id = $1", votes[0].agent_id)
-    await _maybe_spawn_amateur(
-        pool,
-        task["role"],
-        user_row["user_id"] if user_row else None,
-        task["winning_agent_id"],
-    )
+    proposal_user_id = user_row["user_id"] if user_row else None
+    await _maybe_spawn_amateur(pool, task["role"], proposal_user_id, task["winning_agent_id"])
+    await _maybe_spawn_coordinator(pool, task["role"], proposal_user_id)
 
     return len(events)

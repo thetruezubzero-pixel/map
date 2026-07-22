@@ -92,8 +92,10 @@ class ResearchJobDetail(ResearchJobResponse):
 
 
 class PlanItemCategory(str, Enum):
-    """`project_plan_doc` is the only category architect_committer.py
-    will ever act on autonomously -- everything else is a real,
+    """`project_plan_doc` (via architect_committer.py) and, as of Phase
+    5c, `documentation` (via change_proposer.py, allowlisted docs only --
+    see ROADMAP.md "Phase 5c: widening safe_to_autoimplement") are the
+    only categories ever autoimplementable -- everything else is a real,
     surfaced recommendation that stays advisory (shown on the /architect
     dashboard, never auto-implemented), same "advisory unless a human
     reviews it" shape as task_history.consensus_output."""
@@ -110,6 +112,15 @@ class ProjectPlanItem(BaseModel):
     rationale: str
     category: PlanItemCategory
     safe_to_autoimplement: bool = False
+    # Only meaningful for category=documentation: which allowlisted doc
+    # file to write, the proposed new content, and the model's own
+    # self-reported confidence in this specific item (0.0-1.0) --
+    # change_proposer.py multiplies this by the architect's tracked
+    # agent_registry.current_weight to decide auto-merge eligibility, so
+    # this is one real input to that gate, not the whole gate.
+    target_file: str | None = None
+    content: str | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class ProjectPlan(BaseModel):

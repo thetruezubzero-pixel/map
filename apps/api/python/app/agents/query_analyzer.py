@@ -25,6 +25,8 @@ Respond with ONLY a JSON object matching this shape:
   "candidate_sources": array of any of ["openstreetmap","newsapi","opencorporates"],
   "notes": string or null
 }
+
+Always write `notes` in English, regardless of what language the request itself is in.
 """
 
 

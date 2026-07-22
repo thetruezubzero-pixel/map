@@ -150,7 +150,14 @@ frontend for the dashboard.
   (`apps/gateway/migrations/0008_agent_swarm.sql`).
 - Amateur/actuarial/coordinator agent levels; amateurs run in real
   shadow mode (zero vote weight) until graduating at 90% accuracy AND 50
-  consecutive successes, both required.
+  consecutive successes, both required. `coordinator` existed in the
+  schema/CHECK constraint from this phase on, but nothing actually
+  promoted an agent to it until Phase 5c's `_maybe_spawn_coordinator`
+  (see below) -- a stricter, separate bar (97% accuracy, 150 consecutive
+  successes, 200 minimum total tasks) than amateur->actuarial
+  graduation, and `consensus_vote._break_tie` now prefers a coordinator
+  vote over an actuarial one the same way actuarial already outranked
+  amateur.
 - `data_retriever` deliberately stays single-agent, not swarmed --
   deterministic tool execution has no judgment call for multiple
   instances to vote on.
@@ -225,13 +232,189 @@ records. See `apps/api/python/app/agent_swarm/introspection.py`,
   kill switch independent of the token) gate the commit/PR step
   specifically. Snapshotting and planning work with no token at all --
   visible on `/architect` either way.
-- Not done, flagged rather than silently omitted: `safe_to_autoimplement`
-  is currently restricted, by construction, to `PROJECT_PLAN.md` only --
-  the architecture doesn't prevent widening that allowlist once there's
-  a track record of reviewed, merged PRs (the same shadow-mode ->
-  graduation trust-building pattern Phase 5 already uses for amateur
-  agents), but that widening is a future, separate decision, not
-  something this phase does on its own.
+- `safe_to_autoimplement` was restricted, by construction, to
+  `PROJECT_PLAN.md` only as of this phase -- see Phase 5c below for the
+  explicit, separate decision that widened it to allowlisted
+  documentation files, with its own safeguards.
+
+## Phase 5c (built) -- widening safe_to_autoimplement
+
+Phase 5b's own text flagged this as a deliberate future decision, not
+something that phase did on its own: "the architecture doesn't prevent
+widening that allowlist once there's a track record of reviewed, merged
+PRs ... but that widening is a future, separate decision." This is that
+decision, made explicitly by the repo owner, with the following scope
+and safeguards -- see `apps/api/python/app/agent_swarm/services/
+change_proposer.py`.
+
+**What changed**: `project_architect` can now propose changes to
+allowlisted documentation files (not just `PROJECT_PLAN.md`), and can
+have those changes merged automatically without a human clicking
+"merge" -- when, and only when, all of the following hold:
+
+1. **A hard, code-enforced file allowlist** -- `change_proposer.
+   _assert_file_allowlisted` accepts only markdown docs (`*.md`) and
+   `.env.example` templates. `CLAUDE.md` and `ROADMAP.md` are explicitly
+   rejected by name, staying human-owned exactly as Phase 5b already
+   established. Source code, CI workflows, migrations, Dockerfiles,
+   `docker-compose.yml`, and anything not matching those two suffixes
+   are never reachable through this path -- this check runs before any
+   git operation, is not derived from model output, and cannot be
+   overridden by a high confidence score. Two gaps caught and fixed by
+   this phase's own security review before it shipped: the allowlist
+   comparison was originally case-sensitive, so `claude.md`/`Claude.MD`
+   slipped past the `CLAUDE.md`/`ROADMAP.md` block (a real bypass on any
+   case-insensitive filesystem, where it would resolve to the *same
+   file*) -- fixed by lowercasing both sides of the comparison, same
+   pattern `architect_committer._assert_never_main` already used for
+   branch names. Separately, the path-traversal check was string-only
+   (rejecting literal `..` segments); `_assert_resolves_within_project_root`
+   now also resolves symlinks in any existing parent directory and
+   confirms the real path still lands inside the project root.
+2. **A real, non-model-asserted gate**: `effective_score = confidence *
+   agent_weight`. `confidence` is the proposing agent's own self-reported
+   confidence in that specific item (0.0-1.0, part of `ProjectPlanItem`).
+   `agent_weight` is that agent's *tracked* `agent_registry.current_weight`
+   -- the same weight `credit_assigner.py` already earns/decays from real
+   task outcomes for every other role, not a number an agent can just
+   assert about itself. Only when this product clears
+   `AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD` (env `AGENT_AUTO_MERGE_
+   CONFIDENCE_THRESHOLD`, default 0.9) does a proposal become
+   merge-eligible -- *and* only once the agent has completed at least
+   `AGENT_AUTO_MERGE_MIN_TRACK_RECORD` (default 10) prior cycles.
+   Caught during this phase's own security review before it shipped: a
+   brand-new agent's `current_weight` starts at `1.0` -- the neutral
+   prior every agent seeds at, not zero -- so `effective_score` alone
+   could clear the threshold on an agent's very first cycle with no
+   actual track record behind it, contradicting "not a number an agent
+   can just assert." The minimum-cycles requirement closes that gap;
+   without it, the weight term wasn't providing the protection its own
+   description claimed.
+3. **A default-off kill switch**: `AGENT_AUTO_MERGE_ENABLED` (default
+   `false`) gates the actual auto-merge call independently of the score
+   -- same shape as `ARCHITECT_AUTO_COMMIT_ENABLED`. The mechanism exists
+   in code either way; auto-merge is inert until the repo owner
+   deliberately turns it on.
+4. **Still a real branch + real PR, always**: auto-merge means "the PR
+   that was just opened gets merged via the GitHub API," never a direct
+   push to `main`. `_assert_never_main` (reused from
+   `architect_committer.py`) still applies unconditionally. Every step
+   (branch created, committed, pushed, PR opened, merged, skipped, or
+   failed, and why) is written to `agent_change_proposals`
+   (`0011_agent_change_proposals.sql`), append-only at the DB level like
+   `agent_audit_log`/`project_plan_actions` -- the ledger a human reviews
+   to see exactly what was auto-merged and on what basis.
+5. **`code_change` and `infra_change` categories are still never
+   autoimplementable**, by the same model-output filter
+   `project_architect.py`'s `_parse` already applied to everything but
+   `project_plan_doc` -- this phase only widens the allowlist to
+   `documentation`, not to source code or infrastructure.
+
+**Why this doesn't reopen the injection risk the repo owner and I
+discussed before building this**: the risk was specifically an
+unauthenticated, user-facing surface (chat, or any research agent
+processing untrusted external data like news articles or business
+records) being able to trigger a live code mutation from attacker-
+controlled text. This phase deliberately does not wire that -- the
+generalized `change_proposer.propose_change` function is available to
+any agent module in principle, but it is only actually called from
+`project_architect`'s own scheduled cycle
+(`project_architect_cycle_dag.py`), which reasons over a curated,
+introspected project snapshot, not raw untrusted external content or
+live chat input. Wiring `chat_agent` or the research swarm roles
+(`query_analyzer`/`data_retriever`/`result_synthesizer`) into this same
+mechanism -- given they process user chat messages and external public
+records, both attacker-reachable text -- is a separate, larger decision,
+not taken here, and would need its own explicit scope review given the
+different risk shape.
+
+## Phase 5d (built) -- coordinator promotion + full source visibility
+
+Two more explicit scope decisions, made by the repo owner in the same
+conversation as Phase 5c: agents should be able to produce a genuinely
+more senior successor than themselves, and the Architect should be able
+to see real source file contents, not just a curated summary.
+
+**Coordinator promotion** (`swarm_coordinator._maybe_spawn_coordinator`,
+`agent_weight.meets_coordinator_promotion_criteria`): `coordinator` has
+existed in `agent_registry`'s schema since Phase 5, but nothing ever
+promoted an agent to it before this. An actuarial agent that clears a
+real, stricter-than-graduation bar (97% accuracy, 150 consecutive
+successes, 200 minimum total tasks -- all three required, same "both
+conditions, not either" shape as amateur->actuarial graduation) spawns
+exactly one coordinator successor for its (role, user_id), using
+`OPENROUTER_COORDINATOR_MODEL` when an operator has actually configured
+a stronger model (falling back to `openrouter_default_model` otherwise
+-- "better than itself" is only claimed when it's real).
+`consensus_vote._break_tie` now prefers a coordinator vote over an
+actuarial one, the same way actuarial already outranked amateur. Pure
+registry bookkeeping, same trust level as `_maybe_spawn_amateur` --
+grants no git/PR/filesystem capability, so none of Phase 5c's guardrails
+apply to it. A security review of this phase's own diff, before it was
+committed, found the "does a coordinator already exist" check was a
+plain count-then-insert with no supporting constraint -- two concurrent
+`finalize_task` calls for the same (role, user_id) could each pass the
+check before either INSERT committed. Fixed with a real DB-level
+guarantee: `agent_registry_one_coordinator_per_role_user_idx`
+(`0012_coordinator_race_guard.sql`), a `NULLS NOT DISTINCT` partial
+unique index (the platform-default roster uses `user_id IS NULL`, and
+plain `UNIQUE` treats every `NULL` as distinct from every other `NULL`
+-- confirmed live that a naive `UNIQUE` index would NOT have closed this
+for the most common case), paired with `ON CONFLICT ... DO NOTHING` at
+the insert site so the losing side of a race no-ops cleanly instead of
+erroring.
+
+**Full source visibility** (`introspection._read_full_source_tree`,
+gated by `AGENT_FULL_SOURCE_VISIBILITY_ENABLED`, default off): the
+Architect's snapshot previously included only a curated summary (DB
+counts, DAG/route inventories, ROADMAP.md excerpts, git log subjects),
+specifically to bound cost and avoid ever handing a file to OpenRouter
+that might contain a secret. This phase adds the option to include real
+file contents, line-by-line, for every file in the repo except ones
+excluded by a hard denylist (not an allowlist, since "every file" is the
+point): any `.env*` file except `.env.example`, anything with
+secret/credential/password in its name, `.key`/`.pem`/`.p12`/`.pfx`
+files, and anything under `.git`/`node_modules`/`target`/`dist`/build or
+cache directories -- checked before any file is read, unconditionally,
+regardless of this flag. Capped at `AGENT_FULL_SOURCE_VISIBILITY_MAX_CHARS`
+(default 2MB) total, not per file -- confirmed live this repo's own
+readable source is ~694KB across 180 files as of this phase, well within
+that cap; if a future repo's source ever exceeds it, `truncated: true`
+is set on the snapshot (and surfaced in `summarize_snapshot`'s one-line
+summary) rather than silently dropping files with no signal. This is a
+real cost (every architect cycle would embed the whole repo in its
+OpenRouter prompt) and third-party-exposure tradeoff versus the curated
+summary, which is exactly why it defaults off -- turning it on is a
+separate, deliberate choice for whoever runs this deployment, same
+pattern as every other capability flag in this codebase
+(`ARCHITECT_AUTO_COMMIT_ENABLED`, `AGENT_AUTO_MERGE_ENABLED`). A security
+review of this feature before it was committed found and fixed two real
+gaps in `_is_source_readable`'s denylist: the secret-shaped-token check
+(`secret`/`credential`/`password`) only inspected the leaf filename, so
+an innocuously-named file inside a secret-shaped directory (e.g.
+`secrets/db.yml`) would have slipped through -- now every path
+component is checked, directories included. Separately,
+`_read_full_source_tree` now resolves each candidate path and confirms
+it still lands inside `project_root` before reading it, since
+`is_file()`/`read_text()` both follow symlinks but the denylist itself
+only inspects a symlink's own name -- a symlinked path pointing outside
+the checked-out tree would otherwise have its target's content read and
+embedded in the snapshot. No such symlink or secrets-shaped directory
+exists in this repo today (confirmed by enumerating every file the
+denylist currently lets through), but both are real gap classes, not
+hypothetical ones, closed before this flag could ever be turned on
+against a real deployment.
+
+**User-facing communication stays single-voice and English-only.**
+`chat_agent`, `result_synthesizer`, and `project_architect`'s system
+prompts each now explicitly require their free-text output (chat
+replies, report summaries, plan rationale/notes) to be in English
+regardless of the input language or any internal representation used
+between agents. Each of these surfaces already produces exactly one
+synthesized response per turn/job/cycle -- the swarm's individual votes
+are visible on `/swarm`/`/agents` as a transparency/debugging view, not
+as multiple agents "talking to" the user simultaneously; that
+distinction is deliberate and unchanged by this phase.
 
 ## Phase 6 (partially built; remainder needs credentials/legal review)
 

@@ -23,7 +23,8 @@ short, neutral report. Business/property records only. Do NOT infer or \
 state anything about a named individual's personal life, relationships, \
 habits, or whereabouts -- if the input data drifts into that territory, \
 omit it and note the omission. Write 3-6 sentences, factual tone, cite \
-source names inline (e.g. "per OpenCorporates").
+source names inline (e.g. "per OpenCorporates"). Always write the summary \
+in English, regardless of what language the underlying records are in.
 """
 
 

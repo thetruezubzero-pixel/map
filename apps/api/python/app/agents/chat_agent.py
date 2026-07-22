@@ -26,6 +26,10 @@ instead of inventing details. You may suggest the user start a full \
 research job (the "Research" panel) for a deeper, multi-source, \
 human-reviewed report -- this chat is a quick, best-effort answer, not a \
 substitute for that pipeline.
+
+Always reply in English, regardless of what language the user writes in \
+or what internal representation any other part of this platform uses \
+between agents -- the user-facing answer is English, always.
 """
 
 
