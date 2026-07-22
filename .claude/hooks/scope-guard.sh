@@ -12,9 +12,24 @@ cd "$(git rev-parse --show-toplevel)" || exit 0
 # it's banned.
 diff_content=$( { git diff HEAD -- . ':(exclude)*.md' 2>/dev/null; git diff --cached -- . ':(exclude)*.md' 2>/dev/null; } )
 
-if [ -z "$diff_content" ]; then
-  exit 0
-fi
+# `git diff`/`--cached` are both blind to a brand-new file that was never
+# `git add`ed -- confirmed live that a freshly-written untracked file
+# containing one of the banned strings below got exit 0 (silently
+# allowed) with only the two `git diff` calls above. A subagent using
+# the Write tool doesn't stage its own output, so this isn't a corner
+# case -- it's the default shape of a subagent's work. `git diff
+# --no-index` against /dev/null renders an untracked file as a full
+# addition without touching the index (unlike `git add -N`, so this
+# stays a read-only check).
+untracked_content=""
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  untracked_content="$untracked_content
+$(git diff --no-index -- /dev/null "$f" 2>/dev/null)"
+done < <(git ls-files --others --exclude-standard -- . ':(exclude)*.md' 2>/dev/null)
+
+diff_content="$diff_content
+$untracked_content"
 
 banned=(
   "entity_type[^\n]{0,20}['\"]person['\"]"

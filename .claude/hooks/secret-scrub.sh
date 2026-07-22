@@ -7,9 +7,21 @@ cd "$(git rev-parse --show-toplevel)" || exit 0
 
 diff_content=$( { git diff HEAD 2>/dev/null; git diff --cached 2>/dev/null; } )
 
-if [ -z "$diff_content" ]; then
-  exit 0
-fi
+# `git diff`/`--cached` are both blind to a brand-new file that was never
+# `git add`ed -- confirmed live that a fresh untracked file containing an
+# AWS-shaped key got exit 0 (silently allowed) with only the two `git
+# diff` calls above. Same fix as scope-guard.sh: render every untracked,
+# non-ignored file as a full addition via `git diff --no-index` against
+# /dev/null, which doesn't touch the index.
+untracked_content=""
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  untracked_content="$untracked_content
+$(git diff --no-index -- /dev/null "$f" 2>/dev/null)"
+done < <(git ls-files --others --exclude-standard 2>/dev/null)
+
+diff_content="$diff_content
+$untracked_content"
 
 if command -v detect-secrets >/dev/null 2>&1; then
   findings=$(echo "$diff_content" | detect-secrets scan --string 2>/dev/null || true)
