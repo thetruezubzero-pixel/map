@@ -33,6 +33,7 @@ route (`apps/gateway/src/routes/boundaries.rs`).
 | `entity_resolution` | (internal) `research_entities` dedup pass | `@daily` | n/a -- writes `entity_relationships`/`entity_resolution_candidates` | none |
 | `elasticsearch_sync` | (internal) `research_entities` -> ES mirror | `@hourly` | n/a -- syncs `aether_entities` ES index | none |
 | `project_architect_cycle` | (internal) triggers `POST /architect/run` | `@daily` | n/a -- writes `project_snapshots`/`project_plans`/`project_plan_actions` | `JWT_SECRET` (mints its own short-lived token) |
+| `agent_weight_decay` | (internal) `agent_swarm/services/credit_assigner.py`'s `apply_decay` | `@daily` | n/a -- writes `agent_registry`/`weight_history` | none |
 
 All new sources are free and require no paid tier. `sec_edgar_ingestion`,
 `osm_ingestion`, and `gtfs_transit_sync` are the ones that gate on request
@@ -100,6 +101,14 @@ columns**, not just inside `metadata` -- `sec_edgar_ingestion_dag.py` and
 specifically so `apps/api/python/app/graph/resolve.py`'s exact-ID match
 signal can actually use them (see `common/db.py`'s `upsert_entities`
 docstring for why this matters).
+
+**`agent_weight_decay` closes a real gap, not a preventive addition**:
+`credit_assigner.py`'s `apply_decay` (a periodic pass pulling stale
+agents' weights back toward neutral) had zero callers anywhere in the
+codebase -- its own docstring says "call this from a scheduled job,"
+but nothing did. Confirmed live: seeded a 45-day-stale agent at weight
+5.0, ran `apply_decay` directly, weight correctly pulled to ~2.41
+(matching the half-life math) with a real `weight_history` row logged.
 
 ## Scope
 
