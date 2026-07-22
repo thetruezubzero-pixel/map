@@ -87,13 +87,23 @@ impl Config {
             ksqldb_url: env::var("KSQLDB_URL").unwrap_or_else(|_| "http://localhost:8088".to_string()),
             flink_rest_url: env::var("FLINK_REST_URL")
                 .unwrap_or_else(|_| "http://localhost:8081".to_string()),
+            // A readiness review found a malformed value here (non-numeric,
+            // negative) already safely falls back to the default via
+            // `.ok()`, but `HTTP_CLIENT_TIMEOUT_SECS=0`/`REQUEST_TIMEOUT_SECS=0`
+            // parses to a valid `0u64` and isn't rejected -- Duration::from_secs(0)
+            // makes every request/outbound call time out instantly. The
+            // rate-limit quotas just below already guard the equivalent
+            // operator-misconfiguration case via NonZeroU32; `.filter(|&v| v > 0)`
+            // gives these two the same treatment.
             http_client_timeout_secs: env::var("HTTP_CLIENT_TIMEOUT_SECS")
                 .ok()
-                .and_then(|v| v.parse().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|&v| v > 0)
                 .unwrap_or(10),
             request_timeout_secs: env::var("REQUEST_TIMEOUT_SECS")
                 .ok()
-                .and_then(|v| v.parse().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|&v| v > 0)
                 .unwrap_or(30),
         }
     }

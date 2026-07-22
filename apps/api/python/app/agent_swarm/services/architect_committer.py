@@ -111,15 +111,60 @@ async def _run_git(project_root: Path, *args: str, redact: str | None = None) ->
             timeout=30,
         )
 
-    result = await asyncio.to_thread(_run)
+    # A readiness review found a hung `fetch`/`push` (the two network-bound
+    # git calls here) raises subprocess.TimeoutExpired straight out of this
+    # function uncaught -- unlike the nonzero-returncode case just below,
+    # that exception is not an ArchitectCommitError, so neither this
+    # module's nor change_proposer.py's except clauses (both scoped to
+    # ArchitectCommitError/ChangeProposalError/httpx.HTTPError) ever catch
+    # it. Converting it here, in the one place every call site already
+    # goes through, fixes it for both modules at once instead of widening
+    # every caller's except tuple individually.
+    cmd_display = " ".join(args)
+    if redact:
+        cmd_display = cmd_display.replace(redact, "***")
+    try:
+        result = await asyncio.to_thread(_run)
+    except subprocess.TimeoutExpired as exc:
+        raise ArchitectCommitError(f"git {cmd_display} timed out after {exc.timeout}s") from exc
+
     if result.returncode != 0:
-        cmd_display = " ".join(args)
         stderr = result.stderr.strip()
         if redact:
-            cmd_display = cmd_display.replace(redact, "***")
             stderr = stderr.replace(redact, "***")
         raise ArchitectCommitError(f"git {cmd_display} failed: {stderr}")
     return result.stdout.strip()
+
+
+def _cleanup_working_tree(project_root: Path, branch_name: str) -> None:
+    """Runs in the finally block of both this module's sync_project_plan_doc
+    and change_proposer.py's propose_change (imported from here, so the fix
+    lives in one place). A readiness review found two related gaps in the
+    original inline version: (1) subprocess.run's returncode was never
+    checked, so a real cleanup failure (e.g. `branch -D` failing because the
+    branch is somehow still checked out) was silently swallowed with zero
+    signal, leaving the shared working tree in a bad state for the next
+    GIT_WORKING_TREE_LOCK holder with no warning anywhere; (2) neither call
+    was wrapped in a try/except, so a `subprocess.TimeoutExpired` (the 15s
+    timeout is real, not decorative) would propagate out of this finally
+    block and *replace* whatever the try block had already successfully
+    returned -- a real merge/PR-open could complete fine and still surface
+    to the caller as an unhandled exception. Every failure here is now
+    logged, never raised and never silently dropped."""
+    for cmd in (
+        ["git", "-C", str(project_root), "checkout", "main"],
+        ["git", "-C", str(project_root), "branch", "-D", branch_name],
+    ):
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        except (subprocess.SubprocessError, OSError) as exc:
+            logger.warning("working-tree cleanup step %s raised: %s", cmd, exc)
+            continue
+        if result.returncode != 0:
+            logger.warning(
+                "working-tree cleanup step %s exited %d: %s",
+                cmd, result.returncode, result.stderr.strip(),
+            )
 
 
 def _render_plan_doc(plan: ProjectPlan, snapshot_summary: str) -> str:
@@ -155,12 +200,19 @@ def _render_plan_doc(plan: ProjectPlan, snapshot_summary: str) -> str:
 
 async def sync_project_plan_doc(
     pool, plan_id: UUID, plan: ProjectPlan, snapshot_summary: str
-) -> None:
+) -> dict:
     """The only entry point. Regenerates PROJECT_PLAN.md in full from the
     latest plan (a single self-owned status file, not a per-item patch)
     and opens a PR -- but only if the plan actually contains a
     project_plan_doc item the agent judged safe to auto-implement this
-    cycle; otherwise this is a deliberate no-op, logged as such."""
+    cycle; otherwise this is a deliberate no-op, logged as such.
+
+    Returns a dict with at least an `action` key (skipped/failed/pr_opened),
+    mirroring change_proposer.propose_change's contract -- callers (see
+    routers/architect.py) use this to decide whether project_architect's
+    real track record (agent_registry.current_weight/total_tasks) should
+    move, rather than treating every /architect/run invocation as a
+    completed task regardless of what actually happened."""
     settings = get_settings()
 
     autoimplementable = [
@@ -169,21 +221,25 @@ async def sync_project_plan_doc(
         if item.safe_to_autoimplement and item.category == PlanItemCategory.project_plan_doc
     ]
     if not autoimplementable:
-        await _log_action(pool, plan_id, 0, "skipped", detail={"reason": "no safe_to_autoimplement project_plan_doc item this cycle"})
-        return
+        detail = {"reason": "no safe_to_autoimplement project_plan_doc item this cycle"}
+        await _log_action(pool, plan_id, 0, "skipped", detail=detail)
+        return {"action": "skipped", "reason": detail["reason"]}
 
     if not settings.architect_auto_commit_enabled:
-        await _log_action(pool, plan_id, 0, "skipped", detail={"reason": "ARCHITECT_AUTO_COMMIT_ENABLED is false"})
-        return
+        detail = {"reason": "ARCHITECT_AUTO_COMMIT_ENABLED is false"}
+        await _log_action(pool, plan_id, 0, "skipped", detail=detail)
+        return {"action": "skipped", "reason": detail["reason"]}
 
     if not settings.github_token:
-        await _log_action(pool, plan_id, 0, "skipped", detail={"reason": "GITHUB_TOKEN not configured"})
-        return
+        detail = {"reason": "GITHUB_TOKEN not configured"}
+        await _log_action(pool, plan_id, 0, "skipped", detail=detail)
+        return {"action": "skipped", "reason": detail["reason"]}
 
     project_root = Path(settings.project_root)
     if not (project_root / ".git").exists():
-        await _log_action(pool, plan_id, 0, "failed", detail={"reason": f"{project_root} is not a git working tree"})
-        return
+        reason = f"{project_root} is not a git working tree"
+        await _log_action(pool, plan_id, 0, "failed", detail={"reason": reason})
+        return {"action": "failed", "reason": reason}
 
     slug = _slugify(autoimplementable[0].title)
     branch_name = f"agent/architect/{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{slug}"
@@ -225,19 +281,13 @@ async def sync_project_plan_doc(
 
             pr_url = await _open_pull_request(settings, branch_name, autoimplementable[0].title, plan)
             await _log_action(pool, plan_id, 0, "pr_opened", branch_name=branch_name, commit_sha=commit_sha, pr_url=pr_url)
+            return {"action": "pr_opened", "pr_url": pr_url}
         except (ArchitectCommitError, httpx.HTTPError) as exc:
             logger.error("architect commit cycle failed: %s", exc)
             await _log_action(pool, plan_id, 0, "failed", branch_name=branch_name, detail={"error": str(exc)})
+            return {"action": "failed", "reason": str(exc)}
         finally:
-            # Leave the mounted working tree clean for the next cycle
-            # regardless of outcome -- back to main, drop the local branch
-            # ref (the pushed copy on GitHub, if any, is untouched). Also
-            # moved off the event loop -- same reasoning as _run_git above.
-            def _cleanup() -> None:
-                subprocess.run(["git", "-C", str(project_root), "checkout", "main"], capture_output=True, timeout=15)
-                subprocess.run(["git", "-C", str(project_root), "branch", "-D", branch_name], capture_output=True, timeout=15)
-
-            await asyncio.to_thread(_cleanup)
+            await asyncio.to_thread(_cleanup_working_tree, project_root, branch_name)
 
 
 async def _open_pull_request(settings, branch_name: str, title: str, plan: ProjectPlan) -> str:
@@ -264,7 +314,18 @@ async def _open_pull_request(settings, branch_name: str, title: str, plan: Proje
             },
         )
         resp.raise_for_status()
-        return resp.json()["html_url"]
+        data = resp.json()
+        try:
+            return data["html_url"]
+        except KeyError as exc:
+            # A readiness review found this indexed straight into the
+            # response with no guard -- a malformed/unexpected GitHub API
+            # body (a real possibility, not just theoretical: GitHub's own
+            # docs note some error responses reuse a 2xx-shaped envelope)
+            # raised a raw, unhandled KeyError instead of the
+            # ArchitectCommitError this function's caller already knows how
+            # to catch and log cleanly.
+            raise ArchitectCommitError(f"GitHub PR-open response missing html_url: {data!r}") from exc
 
 
 async def _log_action(

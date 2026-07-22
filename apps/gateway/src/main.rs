@@ -60,7 +60,27 @@ async fn main() -> anyhow::Result<()> {
         let mut interval = tokio::time::interval(Duration::from_secs(300));
         loop {
             interval.tick().await;
-            cleanup_state.cleanup_rate_limiters();
+            // A readiness review confirmed cleanup_rate_limiters() (governor's
+            // lock-free DashMap::retain under the hood) has no unwrap/expect/
+            // indexing that could panic today -- but this loop has no
+            // supervision at all, so if a future change to that function or
+            // its dependencies ever did panic, this whole tokio::spawn task
+            // would die silently and cleanup would never run again for the
+            // rest of the process's life with zero observability, exactly
+            // the "silently degrades forever" class of bug this file's other
+            // comments are already guarding against. catch_unwind + a log
+            // line costs nothing today and catches that class of bug the
+            // moment it's ever introduced instead of leaving it invisible.
+            // AssertUnwindSafe is warranted here specifically: this closure
+            // only calls into the two keyed rate-limiter maps (plain
+            // retain-style cleanup, no partial multi-step mutation of
+            // AppState's other fields like the reqwest::Client/PgPool that
+            // a panic mid-way could leave inconsistent), so a caught panic
+            // here can't corrupt anything this state is used for elsewhere.
+            let cleanup = std::panic::AssertUnwindSafe(|| cleanup_state.cleanup_rate_limiters());
+            if let Err(panic) = std::panic::catch_unwind(cleanup) {
+                tracing::error!("rate limiter cleanup panicked (recovered, will retry next tick): {:?}", panic);
+            }
         }
     });
 
