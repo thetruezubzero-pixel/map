@@ -63,6 +63,25 @@ class Settings(BaseSettings):
     architect_auto_commit_enabled: bool = True
     jwt_secret: str = ""  # must match the gateway's JWT_SECRET; required to verify POST /architect/run callers
 
+    # Phase 5c (built) -- widening safe_to_autoimplement beyond
+    # PROJECT_PLAN.md, see app/agent_swarm/services/change_proposer.py
+    # and ROADMAP.md "Phase 5c: widening safe_to_autoimplement". Default
+    # OFF -- same kill-switch shape as architect_auto_commit_enabled:
+    # the mechanism exists in code either way, but auto-merge is inert
+    # until the repo owner deliberately opts in.
+    agent_auto_merge_enabled: bool = False
+    agent_auto_merge_confidence_threshold: float = 0.9
+    # A brand-new agent's agent_registry.current_weight starts at 1.0 --
+    # the neutral prior, not an earned track record (confirmed: nothing
+    # decays it below 1.0 until a real failure is recorded against it,
+    # per credit_assigner.py's decay-toward-neutral-prior design) -- so
+    # confidence * weight alone doesn't actually require a track record
+    # on an agent's very first cycle. This requires a minimum number of
+    # completed cycles (agent_registry.total_tasks) on top of the score
+    # threshold, so "the weight decides" can't be satisfied by a single
+    # self-reported high-confidence claim from a never-run agent.
+    agent_auto_merge_min_track_record: int = 10
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

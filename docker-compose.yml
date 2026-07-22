@@ -224,6 +224,12 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_REPO: ${GITHUB_REPO:-thetruezubzero-pixel/map}
       ARCHITECT_AUTO_COMMIT_ENABLED: ${ARCHITECT_AUTO_COMMIT_ENABLED:-true}
+      # Phase 5c -- see ROADMAP.md "Phase 5c: widening
+      # safe_to_autoimplement". Default off: the mechanism exists either
+      # way, but auto-merge (vs. PR-only) needs an explicit opt-in.
+      AGENT_AUTO_MERGE_ENABLED: ${AGENT_AUTO_MERGE_ENABLED:-false}
+      AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD: ${AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD:-0.9}
+      AGENT_AUTO_MERGE_MIN_TRACK_RECORD: ${AGENT_AUTO_MERGE_MIN_TRACK_RECORD:-10}
     volumes:
       # Dev-only: gives introspection.py real ROADMAP.md/DAG/git-log
       # access and gives architect_committer.py a real working tree to

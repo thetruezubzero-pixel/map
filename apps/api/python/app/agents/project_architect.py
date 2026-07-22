@@ -31,16 +31,28 @@ Respond with ONLY a JSON object matching this shape:
       "title": string,
       "rationale": string (must cite the specific snapshot fact that motivates this),
       "category": one of ["project_plan_doc","code_change","infra_change","documentation","investigation"],
-      "safe_to_autoimplement": boolean
+      "safe_to_autoimplement": boolean,
+      "target_file": string or null (only for category "documentation" -- a real, existing-or-new \
+repo-relative markdown doc path, e.g. "docs/some_topic.md" -- NEVER "CLAUDE.md" or "ROADMAP.md", \
+those are rejected outright regardless of what you propose here),
+      "content": string or null (only for category "documentation" -- the full proposed new content \
+of target_file, not a diff),
+      "confidence": number 0.0-1.0 (your own calibrated confidence that this specific item is correct \
+and safe -- used downstream to help decide whether a human needs to review it first; be honest, not \
+optimistic -- overclaiming confidence doesn't skip review, it's checked against your own track record too)
     }
   ],
   "notes": string or null
 }
 
-Only ever set "safe_to_autoimplement": true for category "project_plan_doc" \
-items -- i.e. updates to the Architect's own status doc, PROJECT_PLAN.md. \
-Every other category is a recommendation for a human to act on, never true. \
-Rank items with the most important first. 3-7 items."""
+Only ever set "safe_to_autoimplement": true for:
+- category "project_plan_doc" items (updates to the Architect's own status doc, PROJECT_PLAN.md), or
+- category "documentation" items that include both target_file and content, proposing a change to an \
+existing markdown doc other than CLAUDE.md/ROADMAP.md.
+Every other category is a recommendation for a human to act on, never true. Even for the two \
+autoimplementable categories, this is a proposal via a real pull request, never a direct edit -- a low \
+enough confidence, or a human/CI reviewer, can still stop it. Rank items with the most important \
+first. 3-7 items."""
 
 
 class ProjectArchitectAgent(Agent):
@@ -80,17 +92,28 @@ class ProjectArchitectAgent(Agent):
             items = []
             for raw in data.get("items", []):
                 category = PlanItemCategory(raw.get("category"))
+                target_file = raw.get("target_file") or None
+                # Defense in depth: never trust the model's own
+                # safe_to_autoimplement=true. project_plan_doc is always
+                # eligible (architect_committer.py re-checks this too);
+                # documentation is only eligible if the model actually
+                # supplied a target_file + content -- change_proposer.py's
+                # _assert_file_allowlisted is the real security boundary
+                # (it rejects CLAUDE.md/ROADMAP.md/non-markdown outright
+                # regardless of this flag), this is just the first filter.
+                safe_to_autoimplement = bool(raw.get("safe_to_autoimplement")) and (
+                    category == PlanItemCategory.project_plan_doc
+                    or (category == PlanItemCategory.documentation and bool(target_file) and bool(raw.get("content")))
+                )
                 items.append(
                     ProjectPlanItem(
                         title=raw["title"],
                         rationale=raw["rationale"],
                         category=category,
-                        # Defense in depth: never trust the model's own
-                        # safe_to_autoimplement=true for anything but the
-                        # one category architect_committer.py is allowed
-                        # to act on, regardless of what it claims.
-                        safe_to_autoimplement=bool(raw.get("safe_to_autoimplement"))
-                        and category == PlanItemCategory.project_plan_doc,
+                        safe_to_autoimplement=safe_to_autoimplement,
+                        target_file=target_file,
+                        content=raw.get("content") or None,
+                        confidence=min(max(float(raw.get("confidence", 0.5)), 0.0), 1.0),
                     )
                 )
             if not items:

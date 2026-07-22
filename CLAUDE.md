@@ -72,16 +72,31 @@ docker-compose.yml   Full local dev stack
   IPFS/blockchain infrastructure without explicit authorization -- it
   spends real money (gas fees) and needs real private-key handling. See
   ROADMAP.md Phase 7.
-- The `project_architect` agent (`apps/api/python/app/agent_swarm/
-  services/architect_committer.py`) may only ever write
-  `PROJECT_PLAN.md`. It must never touch `ROADMAP.md` or `CLAUDE.md`
-  themselves -- both stay human-owned, including this file and
-  ROADMAP.md's "Explicit non-goals" section. It must never push to or
-  merge `main` -- `architect_committer.py`'s `_assert_never_main` guard
-  and its branch-then-PR-only flow are load-bearing, not incidental; do
-  not add a path that merges on the architect's behalf without a written
-  scope decision in ROADMAP.md, per the same norm as every other
-  guardrail in this section. See ROADMAP.md "Phase 5b: the Architect".
+- The `project_architect` agent could originally only ever write
+  `PROJECT_PLAN.md` (`architect_committer.py`); Phase 5c
+  (`change_proposer.py`) widened this, via an explicit, written scope
+  decision, to also propose changes to allowlisted documentation files
+  (`*.md` / `.env.example` only -- see `_assert_file_allowlisted`). It
+  must still never touch `ROADMAP.md` or `CLAUDE.md` themselves -- both
+  stay human-owned, including this file and ROADMAP.md's "Explicit
+  non-goals" section, and both are rejected by name in
+  `_assert_file_allowlisted` regardless of confidence or category. It
+  must never push directly to or merge `main` itself --
+  `_assert_never_main` (in both `architect_committer.py` and
+  `change_proposer.py`) and the branch-then-PR-only flow are
+  load-bearing, not incidental. `change_proposer.py` *can* merge the PR
+  it just opened via the GitHub API when `confidence *
+  agent_registry.current_weight` clears `AGENT_AUTO_MERGE_CONFIDENCE_
+  THRESHOLD` and `AGENT_AUTO_MERGE_ENABLED` is explicitly on (default
+  off) -- this is still a PR merge, never a direct push, and is scoped
+  to the documentation allowlist only; source code and infra changes
+  (`code_change`/`infra_change` categories) are still never
+  autoimplementable. Do not widen the file allowlist, or wire this
+  mechanism into an unauthenticated/untrusted-input-facing agent (chat,
+  or any research role that processes external public records), without
+  a further written scope decision in ROADMAP.md, per the same norm as
+  every other guardrail in this section -- see ROADMAP.md "Phase 5b: the
+  Architect" and "Phase 5c: widening safe_to_autoimplement".
 
 ## Architecture / trust boundaries
 
