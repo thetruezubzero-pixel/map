@@ -34,6 +34,7 @@ route (`apps/gateway/src/routes/boundaries.rs`).
 | `elasticsearch_sync` | (internal) `research_entities` -> ES mirror | `@hourly` | n/a -- syncs `aether_entities` ES index | none |
 | `project_architect_cycle` | (internal) triggers `POST /architect/run` | `@daily` | n/a -- writes `project_snapshots`/`project_plans`/`project_plan_actions` | `JWT_SECRET` (mints its own short-lived token) |
 | `agent_weight_decay` | (internal) `agent_swarm/services/credit_assigner.py`'s `apply_decay` | `@daily` | n/a -- writes `agent_registry`/`weight_history` | none |
+| `fcc_spectrum_licensing_sync` | FCC ULS via opendata.fcc.gov (Socrata) | `@weekly` | `government_filing` | none |
 
 All new sources are free and require no paid tier. `sec_edgar_ingestion`,
 `osm_ingestion`, and `gtfs_transit_sync` are the ones that gate on request

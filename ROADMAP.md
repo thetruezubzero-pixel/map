@@ -450,6 +450,48 @@ distinction is deliberate and unchanged by this phase.
   `PostgresEncryptedHeirloomStore` is the only backend and heirlooms
   don't leave this platform's own database.
 
+## Phase 8 (partially built) — electrical/RF infrastructure public records
+
+Public institutional records about electromagnetic infrastructure -- not
+device tracking, not signal interception. Each source below is a
+licensed/registered public database, ingested the same way SEC EDGAR/
+OpenCorporates/Census already are: source-tagged, licensed, timestamped,
+landing in `research_entities` as `business`/`location`/`government_filing`
+rows. This does not touch the hardware-tracking non-goal below -- that
+non-goal is about scanning for/locating people's physical devices
+(Bluetooth/cellular/WiFi presence tracking); FCC license records and
+utility infrastructure locations are public institutional data, the same
+category as the zoning/census-tract records Phase 6 already ingests.
+
+- **Built**: `fcc_spectrum_licensing_sync` (`data/pipelines/dags/
+  fcc_spectrum_licensing_dag.py`) -- real FCC ULS license records
+  (licensee name, call sign, transmitter lat/lon, frequency band),
+  landing as `entity_type='government_filing'`. No signal detection, no
+  hardware access -- a database query against a public government
+  dataset, identical in shape to `sec_edgar_ingestion_dag.py`. Confirmed
+  live against opendata.fcc.gov's Socrata mirror of ULS data (no API key,
+  no auth) -- the FCC's own www.fcc.gov developer API (License View API)
+  sits behind Akamai bot-protection that blocked every request from this
+  sandbox regardless of User-Agent, so opendata.fcc.gov's dataset mirror
+  is used instead. Only one ULS dataset is wired so far ("ULS 3650 MHz
+  Band Locations", 7,829 records) -- extending coverage means adding
+  another (label, source_slug, resource_id) tuple to the DAG's seed list,
+  following the existing pattern, not new architecture.
+- **Utility/grid infrastructure GIS layers**: public transmission-line
+  and substation location data from utility open-data portals, following
+  the same boundary-polygon pattern as `zoning_districts_dag.py`/
+  `census_tract_boundary_dag.py`.
+- **Semiconductor filing enrichment**: tag existing SEC EDGAR ingestion
+  for chip/NPU/CPU/GPU-related filings so they're findable as a filtered
+  subset -- no new data source, just better tagging of what's already
+  ingested.
+- **Cross-source blending**: once the above land, link a business's FCC
+  license / nearby substation to its existing `research_entities` row
+  (same `entity_relationships`/`same_as` resolution machinery Phase 3
+  already built for corporate parent/subsidiary matching) so a company
+  shows up connected to its RF/electrical infrastructure records instead
+  of as a disconnected row.
+
 ## Explicit non-goals (require a written scope decision to ever revisit)
 
 These are not "later phases" in the normal sense — each one changes the
