@@ -91,7 +91,16 @@ docker-compose.yml   Full local dev stack
   off) -- this is still a PR merge, never a direct push, and is scoped
   to the documentation allowlist only; source code and infra changes
   (`code_change`/`infra_change` categories) are still never
-  autoimplementable. Do not widen the file allowlist, or wire this
+  autoimplementable. `current_weight`/`total_tasks` for this role are
+  updated via `credit_assigner.apply_rewards` in `routers/architect.py`,
+  keyed to each cycle's real `sync_project_plan_doc`/`propose_change`
+  outcomes (merged/pr_opened/failed) -- a readiness review found the
+  original version incremented `total_tasks` unconditionally on every
+  `/architect/run` call regardless of outcome and never updated
+  `current_weight` for this role at all, so the "track record" gating
+  auto-merge was just a call counter with no real quality signal behind
+  it. Any future change to this reward wiring must keep it tied to a
+  genuine outcome, not invocation count. Do not widen the file allowlist, or wire this
   mechanism into an unauthenticated/untrusted-input-facing agent (chat,
   or any research role that processes external public records), without
   a further written scope decision in ROADMAP.md, per the same norm as
@@ -109,6 +118,27 @@ docker-compose.yml   Full local dev stack
   `_is_source_readable`'s denylist in the same commit -- don't rely on
   the flag defaulting off as the only protection, since the whole point
   of this feature is that someone will eventually turn it on.
+- **Any route that triggers a real, billed OpenRouter call needs its own
+  rate limit and a timeout budget that covers its own worst-case retry
+  latency -- being reached through `web`'s nginx or the gateway is not
+  enough on its own.** A readiness review found `POST /chat`
+  (`app/routers/chat.py`) had neither: it's proxied straight through
+  `web/nginx.conf`'s `/py-api/` location with no throttle in front of it
+  at all (unlike the gateway's `rate_limit.rs`, which only covers
+  gateway-routed paths), so an anonymous caller could drive unbounded
+  OpenRouter spend with a simple loop. Separately, `chat_agent.py`'s
+  `openrouter_client.complete()` retries up to 2 candidate models (fast +
+  fallback), each up to 2 attempts x 30s + backoff -- a genuine ~128s
+  worst case before it ever reaches its own graceful degraded-reply
+  fallback -- while nginx's default 60s `proxy_read_timeout` cut that
+  connection first, surfacing a bare 504 instead. Fixed with a dedicated
+  `location = /py-api/chat` block (`nginx.conf`) carrying its own
+  `limit_req` and a `proxy_read_timeout` sized above that ~128s budget,
+  scoped to that one location so no other python-api route's behavior
+  changes. Any future route with a real external-API-cost side effect
+  needs the same two things: its own throttle, and a timeout budget that
+  actually covers its own worst-case latency, not just the platform
+  default.
 
 ## Architecture / trust boundaries
 

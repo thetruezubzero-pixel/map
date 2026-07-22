@@ -69,18 +69,24 @@ async def _swarm_health(pool) -> list[dict]:
     # output_key. task_history doesn't persist ConsensusResult.agreement_ratio
     # directly, so this is reconstructed from the same votes JSON the
     # /swarm dashboard already renders, not a new stored metric.
-    task_rows = await pool.fetch(
-        """
-        SELECT role, votes FROM task_history
-        WHERE role IN ('query_analyzer', 'result_synthesizer')
-        ORDER BY created_at DESC LIMIT 200
-        """
-    )
+    #
+    # A readiness review found the original version fetched the last 200
+    # task_history rows across BOTH roles combined, then split by role --
+    # if one role is more active than the other (a realistic steady state,
+    # since amateur-vote failures/spawns aren't role-symmetric), the
+    # less-active role's rate was silently computed from a much smaller,
+    # non-200 sample despite the docstring's "a role's last 200" claim.
+    # Querying each role's own last-200 window separately fixes it.
     disagreements: dict[str, list[bool]] = {}
-    for r in task_rows:
-        votes = json.loads(r["votes"]) if isinstance(r["votes"], str) else r["votes"]
-        keys = {v["output_key"] for v in votes if v.get("weight", 0) > 0}
-        disagreements.setdefault(r["role"], []).append(len(keys) > 1)
+    for role in ("query_analyzer", "result_synthesizer"):
+        role_rows = await pool.fetch(
+            "SELECT votes FROM task_history WHERE role = $1 ORDER BY created_at DESC LIMIT 200",
+            role,
+        )
+        for r in role_rows:
+            votes = json.loads(r["votes"]) if isinstance(r["votes"], str) else r["votes"]
+            keys = {v["output_key"] for v in votes if v.get("weight", 0) > 0}
+            disagreements.setdefault(role, []).append(len(keys) > 1)
     disagreement_rate = {role: sum(flags) / len(flags) for role, flags in disagreements.items() if flags}
 
     return [
@@ -182,7 +188,7 @@ def _is_source_readable(path: Path) -> bool:
     return path.suffix in _SOURCE_SUFFIXES
 
 
-def _read_full_source_tree(project_root: Path, *, max_total_chars: int) -> dict:
+def _read_full_source_tree_sync(project_root: Path, *, max_total_chars: int) -> dict:
     """Reads real source file contents, line-by-line, not a summary --
     only when settings.agent_full_source_visibility_enabled (default
     off; see build_project_snapshot). Capped at max_total_chars TOTAL
@@ -191,7 +197,13 @@ def _read_full_source_tree(project_root: Path, *, max_total_chars: int) -> dict:
     own source (excluding node_modules/target/.git) is ~1MB/~17k lines
     as of this phase, so the default 2MB cap covers it with headroom,
     but the cap (and the `truncated` flag when it's hit) exists so
-    growth doesn't silently start dropping files with no signal."""
+    growth doesn't silently start dropping files with no signal.
+
+    Synchronous by design -- always called via asyncio.to_thread (see
+    _read_full_source_tree below), since this walks and reads the
+    project's *entire* tree and would otherwise block this single-worker
+    service's event loop for the whole walk, the same bug class already
+    fixed for _recent_git_log's subprocess call in this same file."""
     if not project_root.exists():
         return {"files": [], "total_files": 0, "total_chars": 0, "truncated": False}
 
@@ -208,7 +220,19 @@ def _read_full_source_tree(project_root: Path, *, max_total_chars: int) -> dict:
         # project_root would have its *target's* content read otherwise.
         # No such symlink exists in this repo today, but this check
         # doesn't depend on that staying true.
-        resolved_path = path.resolve()
+        #
+        # A readiness review found this resolve() call sat OUTSIDE any
+        # try/except -- is_file() above tolerates a permission error on an
+        # intermediate directory (specific errnos only), but resolve()
+        # doesn't, so one unreadable path anywhere under project_root
+        # raised straight out of this function (and, unhandled, out of
+        # build_project_snapshot -> POST /architect/run) instead of being
+        # skipped-with-a-warning like every other read failure here.
+        try:
+            resolved_path = path.resolve()
+        except OSError as exc:
+            logger.warning("full-source-tree skipped a path that failed to resolve: %s: %s", path, exc)
+            continue
         if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
             logger.warning("full-source-tree skipped a path resolving outside project root: %s", path)
             continue
@@ -230,6 +254,19 @@ def _read_full_source_tree(project_root: Path, *, max_total_chars: int) -> dict:
         total_chars += len(text)
 
     return {"files": files, "total_files": len(files), "total_chars": total_chars, "truncated": truncated}
+
+
+async def _read_full_source_tree(project_root: Path, *, max_total_chars: int) -> dict:
+    """A readiness review found _read_full_source_tree_sync was called
+    directly from build_project_snapshot with no asyncio.to_thread -- the
+    exact bug class CLAUDE.md documents as already found and fixed for
+    architect_committer.py/change_proposer.py's git calls and, in this
+    same file, _recent_git_log, just missed for this one. Walking the
+    whole tree and reading every matching file as plain synchronous I/O
+    directly on the single uvicorn worker's event loop freezes every
+    concurrent request (including /health) for the duration, whenever
+    AGENT_FULL_SOURCE_VISIBILITY_ENABLED=true."""
+    return await asyncio.to_thread(_read_full_source_tree_sync, project_root, max_total_chars=max_total_chars)
 
 
 def _read_dag_inventory(project_root: Path) -> list[str]:
@@ -300,7 +337,7 @@ async def build_project_snapshot(pool) -> dict:
     snapshot["python_api_routers"] = PYTHON_API_ROUTERS
 
     if settings.agent_full_source_visibility_enabled:
-        snapshot["full_source_tree"] = _read_full_source_tree(
+        snapshot["full_source_tree"] = await _read_full_source_tree(
             project_root, max_total_chars=settings.agent_full_source_visibility_max_chars
         )
 

@@ -1,6 +1,11 @@
 import pytest
 
-from app.agent_swarm.introspection import _is_source_readable, _read_full_source_tree, summarize_snapshot
+from app.agent_swarm.introspection import (
+    _is_source_readable,
+    _read_full_source_tree,
+    _read_full_source_tree_sync,
+    summarize_snapshot,
+)
 
 
 def _base_snapshot(swarm_health):
@@ -141,7 +146,7 @@ def test_read_full_source_tree_excludes_secrets_and_reads_real_content(tmp_path)
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "pkg.py").write_text("noise\n", encoding="utf-8")
 
-    result = _read_full_source_tree(tmp_path, max_total_chars=1_000_000)
+    result = _read_full_source_tree_sync(tmp_path, max_total_chars=1_000_000)
 
     paths = {f["path"] for f in result["files"]}
     assert "app.py" in paths
@@ -157,15 +162,45 @@ def test_read_full_source_tree_excludes_secrets_and_reads_real_content(tmp_path)
 
 def test_read_full_source_tree_sets_truncated_flag_when_cap_is_hit(tmp_path):
     (tmp_path / "big.py").write_text("x" * 2000, encoding="utf-8")
-    result = _read_full_source_tree(tmp_path, max_total_chars=100)
+    result = _read_full_source_tree_sync(tmp_path, max_total_chars=100)
     assert result["truncated"] is True
     assert result["files"] == []  # never includes a partial/truncated file
 
 
 def test_read_full_source_tree_missing_project_root_degrades_cleanly(tmp_path):
     missing = tmp_path / "does-not-exist"
-    result = _read_full_source_tree(missing, max_total_chars=1_000_000)
+    result = _read_full_source_tree_sync(missing, max_total_chars=1_000_000)
     assert result == {"files": [], "total_files": 0, "total_chars": 0, "truncated": False}
+
+
+def test_read_full_source_tree_skips_a_path_that_fails_to_resolve(tmp_path, monkeypatch):
+    """Confirmed by a readiness review: the original version called
+    path.resolve() with no guard at all -- unlike is_file() just above it
+    (which tolerates a permission error on an intermediate directory),
+    resolve() raised straight out of this function on any OSError (e.g.
+    EACCES on an unreadable directory), turning one bad path anywhere
+    under project_root into an unhandled crash of the whole Architect
+    snapshot cycle instead of a skip-with-a-warning like every other
+    per-file failure here."""
+    from pathlib import Path
+
+    (tmp_path / "good.py").write_text("print('fine')\n", encoding="utf-8")
+    (tmp_path / "bad.py").write_text("print('unreadable')\n", encoding="utf-8")
+
+    real_resolve = Path.resolve
+
+    def _flaky_resolve(self, *a, **k):
+        if self.name == "bad.py":
+            raise OSError(13, "Permission denied")
+        return real_resolve(self, *a, **k)
+
+    monkeypatch.setattr(Path, "resolve", _flaky_resolve)
+
+    result = _read_full_source_tree_sync(tmp_path, max_total_chars=1_000_000)
+
+    paths = {f["path"] for f in result["files"]}
+    assert "good.py" in paths
+    assert "bad.py" not in paths
 
 
 def test_read_full_source_tree_skips_a_symlink_that_escapes_project_root(tmp_path):
@@ -183,9 +218,26 @@ def test_read_full_source_tree_skips_a_symlink_that_escapes_project_root(tmp_pat
     (outside / "leaked.py").write_text("print('should not be readable')\n", encoding="utf-8")
     (project_root / "escape.py").symlink_to(outside / "leaked.py")
 
-    result = _read_full_source_tree(project_root, max_total_chars=1_000_000)
+    result = _read_full_source_tree_sync(project_root, max_total_chars=1_000_000)
 
     paths = {f["path"] for f in result["files"]}
     assert "app.py" in paths
     assert "escape.py" not in paths
     assert not any("should not be readable" in f["content"] for f in result["files"])
+
+
+def test_read_full_source_tree_async_wrapper_delegates_to_sync_implementation(tmp_path):
+    """A readiness review found the sync implementation was being called
+    directly from async def build_project_snapshot with no
+    asyncio.to_thread, blocking this single-worker service's event loop
+    for the whole tree walk -- the same bug class already fixed for
+    _recent_git_log's subprocess call in this same file. This locks in
+    that the public async entry point actually delegates (via
+    asyncio.to_thread) rather than re-implementing or skipping the work."""
+    import asyncio
+
+    (tmp_path / "app.py").write_text("print('hi')\n", encoding="utf-8")
+
+    result = asyncio.run(_read_full_source_tree(tmp_path, max_total_chars=1_000_000))
+
+    assert {f["path"] for f in result["files"]} == {"app.py"}

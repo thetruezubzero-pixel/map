@@ -49,7 +49,6 @@ import asyncio
 import base64
 import json
 import logging
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,6 +58,7 @@ from app.agent_swarm.services.architect_committer import (
     GIT_WORKING_TREE_LOCK,
     ArchitectCommitError,
     _assert_never_main,
+    _cleanup_working_tree,
     _run_git,
     _slugify,
 )
@@ -251,15 +251,7 @@ async def propose_change(
             await log("failed", branch_name=branch_name, detail={"error": str(exc)})
             return {"action": "failed", "reason": str(exc)}
         finally:
-            # Moved off the event loop -- same reasoning as _run_git in
-            # architect_committer.py (a security review confirmed a blocking
-            # subprocess.run here freezes this single-worker service for its
-            # whole duration).
-            def _cleanup() -> None:
-                subprocess.run(["git", "-C", str(project_root), "checkout", "main"], capture_output=True, timeout=15)
-                subprocess.run(["git", "-C", str(project_root), "branch", "-D", branch_name], capture_output=True, timeout=15)
-
-            await asyncio.to_thread(_cleanup)
+            await asyncio.to_thread(_cleanup_working_tree, project_root, branch_name)
 
 
 async def _open_pull_request(settings, branch_name: str, title: str, body: str) -> tuple[str, int]:
@@ -275,7 +267,14 @@ async def _open_pull_request(settings, branch_name: str, title: str, body: str) 
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["html_url"], data["number"]
+        try:
+            return data["html_url"], data["number"]
+        except KeyError as exc:
+            # A readiness review found this indexed straight into the
+            # response with no guard -- a malformed/unexpected GitHub API
+            # body raised a raw KeyError instead of the ChangeProposalError
+            # propose_change's own except clause already catches and logs.
+            raise ChangeProposalError(f"GitHub PR-open response missing html_url/number: {data!r}") from exc
 
 
 async def _merge_pull_request(settings, pr_number: int) -> None:

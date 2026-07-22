@@ -88,12 +88,19 @@ def compute_rewards(
     return events
 
 
-async def apply_rewards(pool, task_id: UUID, events: list[RewardEvent]) -> None:
+async def apply_rewards(pool, task_id: UUID | None, events: list[RewardEvent]) -> None:
     """Writes each reward to weight_history and updates
     agent_registry.current_weight/consecutive_successes/total_* in one
     transaction per agent. Idempotent at the task level via
     task_history.reward_applied, checked by the caller (see
-    swarm_coordinator.finalize_task) before this is invoked."""
+    swarm_coordinator.finalize_task) before this is invoked.
+
+    `task_id` is nullable (weight_history.task_id is a nullable FK to
+    task_history) for callers that don't have a task_history row at all --
+    routers/architect.py uses this to reward project_architect's real,
+    per-cycle proposal outcomes (see change_proposer.propose_change /
+    architect_committer.sync_project_plan_doc), a single non-swarmed agent
+    that never appears in task_history."""
     for event in events:
         async with pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(

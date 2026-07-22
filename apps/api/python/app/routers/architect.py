@@ -8,8 +8,10 @@ from pydantic import BaseModel
 
 from app import db
 from app.agent_swarm.introspection import build_project_snapshot, summarize_snapshot
+from app.agent_swarm.services import credit_assigner
 from app.agent_swarm.services.architect_committer import sync_project_plan_doc
 from app.agent_swarm.services.change_proposer import propose_change
+from app.agent_swarm.services.credit_assigner import RewardEvent
 from app.agents.project_architect import ProjectArchitectAgent
 from app.auth import require_user_id
 from app.config import get_settings
@@ -59,7 +61,9 @@ async def run_architect_cycle(triggered_by: str = Depends(require_user_id)) -> R
     is real, not a dry run."""
     pool = await db.get_pool()
     agent_id = await _ensure_architect_agent(pool)
-    agent_row = await pool.fetchrow("SELECT model, current_weight FROM agent_registry WHERE id = $1", agent_id)
+    agent_row = await pool.fetchrow(
+        "SELECT model, current_weight, total_tasks FROM agent_registry WHERE id = $1", agent_id
+    )
 
     snapshot = await build_project_snapshot(pool)
     summary = summarize_snapshot(snapshot)
@@ -85,24 +89,53 @@ async def run_architect_cycle(triggered_by: str = Depends(require_user_id)) -> R
     )
     plan_id = plan_row["id"]
 
-    updated_row = await pool.fetchrow(
-        "UPDATE agent_registry SET total_tasks = total_tasks + 1, updated_at = now() WHERE id = $1 RETURNING total_tasks",
-        agent_id,
-    )
+    # A readiness review found the old version of this route incremented
+    # total_tasks unconditionally on every /architect/run call, regardless
+    # of what actually happened -- and current_weight was never updated for
+    # this role at all (apply_rewards is only ever called from
+    # swarm_coordinator.finalize_task, for the swarm roles that vote).
+    # Net effect: with AGENT_AUTO_MERGE_ENABLED on, effective_score in
+    # change_proposer.propose_change (confidence * agent_weight) reduced to
+    # just the model's own self-reported confidence forever, since
+    # agent_weight was permanently pinned at the neutral prior (1.0) -- and
+    # AGENT_AUTO_MERGE_MIN_TRACK_RECORD reduced to "called this route N
+    # times", not "completed N real proposals", exactly the "a number the
+    # agent can just assert" scenario change_proposer.py's own docstring
+    # says this gate exists to prevent. Fixed by reusing credit_assigner's
+    # real reward mechanism (the same one every swarm role earns its
+    # weight through) keyed to each cycle's actual outcomes instead.
+    prior_weight = float(agent_row["current_weight"])
+    prior_total_tasks = agent_row["total_tasks"]
 
-    await sync_project_plan_doc(pool, plan_id, plan, summary)
+    plan_doc_outcome = await sync_project_plan_doc(pool, plan_id, plan, summary)
+
+    reward_events: list[RewardEvent] = []
+
+    def _reward_for_outcome(action: str, confidence: float = 1.0) -> None:
+        if action == "merged":
+            reward_events.append(RewardEvent(agent_id=agent_id, reward=credit_assigner.WIN_REWARD, reason="architect_merged"))
+        elif action == "pr_opened":
+            reward_events.append(RewardEvent(agent_id=agent_id, reward=credit_assigner.AGREE_REWARD, reason="architect_pr_opened"))
+        elif action == "failed":
+            reward = credit_assigner.WRONG_VOTE_BASE_PENALTY * max(confidence, 0.1)
+            reward_events.append(RewardEvent(agent_id=agent_id, reward=reward, reason="architect_failed"))
+        # "skipped" -- no proposal was actually attempted this cycle (auto-
+        # commit disabled, no token configured, nothing safe_to_autoimplement),
+        # so it moves neither weight nor track record either way.
+
+    _reward_for_outcome(plan_doc_outcome["action"])
 
     # Phase 5c: documentation items the model marked safe_to_autoimplement
     # (already defense-in-depth filtered by project_architect._parse to
     # require a target_file + content) each get proposed as their own PR
     # via change_proposer.py -- separate from the PROJECT_PLAN.md flow
     # above, since these touch other allowlisted doc files, not the
-    # Architect's own status doc. agent_weight reuses this agent's own
-    # tracked agent_registry.current_weight (the same credit_assigner
-    # signal every swarm role earns), not a number the model can assert.
+    # Architect's own status doc. agent_weight/agent_total_tasks are this
+    # cycle's *prior* values (fixed for every item in this loop), not
+    # updated mid-cycle by this same cycle's own outcomes.
     for item in plan.items:
         if item.category == PlanItemCategory.documentation and item.safe_to_autoimplement:
-            await propose_change(
+            outcome = await propose_change(
                 pool,
                 agent_name="project_architect",
                 role="project_architect",
@@ -111,9 +144,13 @@ async def run_architect_cycle(triggered_by: str = Depends(require_user_id)) -> R
                 title=item.title,
                 rationale=item.rationale,
                 confidence=item.confidence,
-                agent_weight=float(agent_row["current_weight"]),
-                agent_total_tasks=updated_row["total_tasks"],
+                agent_weight=prior_weight,
+                agent_total_tasks=prior_total_tasks,
             )
+            _reward_for_outcome(outcome["action"], item.confidence)
+
+    if reward_events:
+        await credit_assigner.apply_rewards(pool, task_id=None, events=reward_events)
 
     return RunResponse(
         snapshot_id=str(snapshot_id),
