@@ -30,10 +30,14 @@ DEFAULT_SEARCH_TERMS = ["business acquisition", "corporate merger"]
 def newsapi_ingestion_dag():
     @task
     def fetch_headlines() -> list[dict]:
+        import logging
+
         import httpx
         from airflow.sdk import Variable
 
         from common.pii_scrub import scrub_record
+
+        logger = logging.getLogger(__name__)
 
         api_key = os.environ.get("NEWSAPI_KEY", "")
         if not api_key:
@@ -47,12 +51,23 @@ def newsapi_ingestion_dag():
         records: list[dict] = []
         with httpx.Client(timeout=15.0) as client:
             for term in search_terms:
-                resp = client.get(
-                    "https://newsapi.org/v2/everything",
-                    params={"q": term, "pageSize": 20, "sortBy": "publishedAt", "language": "en"},
-                    headers={"X-Api-Key": api_key},
-                )
-                resp.raise_for_status()
+                try:
+                    resp = client.get(
+                        "https://newsapi.org/v2/everything",
+                        params={"q": term, "pageSize": 20, "sortBy": "publishedAt", "language": "en"},
+                        headers={"X-Api-Key": api_key},
+                    )
+                    resp.raise_for_status()
+                except httpx.HTTPError as exc:
+                    # A bad/expired key or a rate limit must not crash the
+                    # whole task -- confirmed live, a set-but-invalid
+                    # NEWSAPI_KEY gets a real 401 from newsapi.org, and this
+                    # used to have no try/except at all around the request.
+                    # Matches the fail-soft behavior this source's streaming
+                    # producer (app/streaming/producers/newsapi_stream.py)
+                    # already has.
+                    logger.warning("NewsAPI search failed for %r, skipping: %s", term, exc)
+                    continue
                 for article in resp.json().get("articles", []):
                     records.append(
                         scrub_record(

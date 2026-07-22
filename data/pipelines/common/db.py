@@ -19,12 +19,22 @@ def get_connection():
 
 
 def upsert_entities(records: list[dict[str, Any]]) -> int:
-    """Each record: name, entity_type, source, license, lat, lon, metadata.
-    Idempotent on (source, entity_type, name) -- see
+    """Each record: name, entity_type, source, license, lat, lon, metadata,
+    and optionally cik/opencorporates_id/ein. Idempotent on
+    (source, entity_type, name) -- see
     apps/gateway/migrations/0004_entities_idempotency.sql for the unique
     constraint this relies on (without it, `ON CONFLICT DO NOTHING` has
     nothing to conflict against, since `id` is always a fresh random UUID,
     and every re-run silently duplicates every row).
+
+    cik/opencorporates_id/ein are written as their own top-level columns
+    (apps/gateway/migrations/0003_entity_resolution.sql), not just left
+    inside `metadata` -- app/graph/resolve.py's exact-ID match signal
+    (SCORE_EXACT_ID = 1.0, meant to auto-confirm a same-company match
+    instantly) reads these as real columns, and can never fire for
+    anything ingested through this function if they're only ever in
+    `metadata` JSON. Confirmed live: before this fix, a record with
+    metadata->>'cik' set still had cik IS NULL.
 
     Returns the number of rows actually inserted (not the input count --
     rows skipped as duplicates are not counted).
@@ -46,8 +56,9 @@ def upsert_entities(records: list[dict[str, Any]]) -> int:
 
                 cur.execute(
                     f"""
-                    INSERT INTO research_entities (name, entity_type, source, license, geom, metadata)
-                    VALUES (%s, %s, %s, %s, {geom_expr}, %s)
+                    INSERT INTO research_entities
+                        (name, entity_type, source, license, geom, metadata, cik, opencorporates_id, ein)
+                    VALUES (%s, %s, %s, %s, {geom_expr}, %s, %s, %s, %s)
                     ON CONFLICT (source, entity_type, name) DO NOTHING
                     """,
                     [
@@ -57,6 +68,9 @@ def upsert_entities(records: list[dict[str, Any]]) -> int:
                         record.get("license"),
                         *params,
                         json.dumps(record.get("metadata", {})),
+                        record.get("cik"),
+                        record.get("opencorporates_id"),
+                        record.get("ein"),
                     ],
                 )
                 inserted += cur.rowcount

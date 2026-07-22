@@ -88,6 +88,19 @@ restructured). The DAG fails soft (empty result, logged warning) rather
 than raising -- if data.gov's API has moved, update `DATA_GOV_API_BASE`
 in `data_gov_search_dag.py`.
 
+**`newsapi_ingestion` and `opencorporates_sync` fail soft per search
+term** on any HTTP error from their upstream (bad/expired key, rate
+limit), not just the "no key configured" case -- confirmed live against
+both real APIs, matching the fail-soft behavior their streaming-producer
+siblings in `apps/api/python/app/streaming/producers/` already had.
+
+**`upsert_entities` writes `cik`/`opencorporates_id`/`ein` as their own
+columns**, not just inside `metadata` -- `sec_edgar_ingestion_dag.py` and
+`opencorporates_sync_dag.py` pass them as top-level record fields
+specifically so `apps/api/python/app/graph/resolve.py`'s exact-ID match
+signal can actually use them (see `common/db.py`'s `upsert_entities`
+docstring for why this matters).
+
 ## Scope
 
 Public records only -- see ../../ROADMAP.md.
