@@ -52,6 +52,55 @@ async def get_job(job_id: UUID) -> ResearchJobDetail:
     )
 
 
+@router.get("/research/{job_id}/trace")
+async def get_job_trace(job_id: UUID) -> dict:
+    """Full reasoning chain for one job in one place: every swarm
+    consensus round (task_history -- analyzer votes, the winning plan,
+    the retriever's single call, synthesizer votes) interleaved with
+    every orchestrator/audit event (agent_audit_log -- cache hits, job
+    failures, human review decisions), ordered by time. This doesn't
+    change how the swarm votes -- each role's instances still run
+    independently, which is what makes weighted_consensus meaningful --
+    it just exposes the chain that already connects the roles
+    (query_analyzer -> data_retriever -> result_synthesizer) for one job,
+    which today is otherwise scattered across two tables with no shared
+    view. See GET /swarm for the equivalent feed across every job."""
+    row = await db.get_research_job(job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="research job not found")
+
+    pool = await db.get_pool()
+    task_rows = await pool.fetch(
+        """
+        SELECT id, job_id, role, agents_involved, votes, consensus_output,
+               winning_agent_id, reward_applied, created_at
+        FROM task_history WHERE job_id = $1 ORDER BY created_at
+        """,
+        job_id,
+    )
+    audit_rows = await pool.fetch(
+        "SELECT id, agent_name, action, detail, created_at FROM agent_audit_log WHERE job_id = $1 ORDER BY created_at",
+        job_id,
+    )
+
+    events = [
+        {"type": "consensus_round", **swarm_coordinator.shape_task_row(r)} for r in task_rows
+    ] + [
+        {
+            "type": "audit_log",
+            "id": str(r["id"]),
+            "agent_name": r["agent_name"],
+            "action": r["action"],
+            "detail": json.loads(r["detail"]) if isinstance(r["detail"], str) else r["detail"],
+            "created_at": r["created_at"].isoformat(),
+        }
+        for r in audit_rows
+    ]
+    events.sort(key=lambda e: e["created_at"])
+
+    return {"job_id": str(job_id), "events": events}
+
+
 @router.post("/research/{job_id}/review")
 async def review_job(job_id: UUID, decision: ReviewDecision) -> dict:
     """Human review of an `awaiting_review` job -- was the report

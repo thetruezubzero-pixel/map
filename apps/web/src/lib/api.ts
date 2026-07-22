@@ -397,8 +397,10 @@ export interface SwarmTask {
   created_at: string
 }
 
-export function getSwarmActivity(limit = 50): Promise<{ tasks: SwarmTask[] }> {
-  return pyRequest(`/swarm?limit=${limit}`)
+export function getSwarmActivity(limit = 50, jobId?: string): Promise<{ tasks: SwarmTask[] }> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (jobId) params.set('job_id', jobId)
+  return pyRequest(`/swarm?${params.toString()}`)
 }
 
 export interface TrainingEntry {
@@ -539,4 +541,32 @@ export function getBoundaries(
   if (boundaryType) params.set('boundary_type', boundaryType)
   if (bbox) params.set('bbox', bbox)
   return request(`/boundaries?${params.toString()}`)
+}
+
+// --- Chat: direct plain-English conversation with the platform
+// (app/agents/chat_agent.py, app/routers/chat.py) -- distinct from
+// POST /research's structured multi-agent pipeline above. Stateless: the
+// caller resends the full message history each turn.
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatGroundingRecord {
+  id: string
+  name: string
+  entity_type: EntityType
+  source: string
+  license: string | null
+  retrieved_at: string
+}
+
+export function sendChatMessage(
+  messages: ChatMessage[],
+): Promise<{ reply: string; grounding: ChatGroundingRecord[] }> {
+  return pyRequest('/chat', {
+    method: 'POST',
+    body: JSON.stringify({ messages }),
+  })
 }
