@@ -22,8 +22,10 @@ export function SearchBar() {
 
   const [suggestions, setSuggestions] = useState<GeocodeHit[]>([])
   const [open, setOpen] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const debouncedQuery = useDebounced(filters.query, 300)
   const requestId = useRef(0)
+  const searchRequestId = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // The suggestions dropdown otherwise has no dismiss path besides picking
@@ -65,13 +67,16 @@ export function SearchBar() {
       .then((hits) => {
         if (id === requestId.current) setSuggestions(hits)
       })
-      .catch(() => {
-        if (id === requestId.current) setSuggestions([])
+      .catch((err) => {
+        if (id !== requestId.current) return
+        setSuggestions([])
+        console.error('geocode suggestions failed', err)
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQuery])
 
   useEffect(() => {
+    const id = ++searchRequestId.current
     search({
       q: debouncedQuery.trim() || undefined,
       source: filters.source ?? undefined,
@@ -80,8 +85,16 @@ export function SearchBar() {
       date_to: filters.dateTo ?? undefined,
       limit: 50,
     })
-      .then((res) => setResults(res.results))
-      .catch(() => setResults([]))
+      .then((res) => {
+        if (id !== searchRequestId.current) return
+        setResults(res.results)
+        setSearchError(null)
+      })
+      .catch((err) => {
+        if (id !== searchRequestId.current) return
+        setResults([])
+        setSearchError(err instanceof Error ? err.message : 'search failed')
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQuery, filters.source, filters.entityType, filters.dateFrom, filters.dateTo])
 
@@ -137,6 +150,12 @@ export function SearchBar() {
             </li>
           ))}
         </ul>
+      )}
+
+      {searchError && (
+        <p className="mt-1 text-xs text-red-400" role="alert">
+          Search failed: {searchError}
+        </p>
       )}
     </div>
   )

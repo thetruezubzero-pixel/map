@@ -36,8 +36,15 @@ fi
 patterns=(
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   'AKIA[0-9A-Z]{16}'
-  'api[_-]?key["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_-]{16,}'
-  'secret["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_-]{16,}'
+  # Confirmed live (security review) that the original version of this
+  # pattern only matched when "secret"/"api_key" sat immediately before
+  # the assignment operator -- a real, common naming convention like
+  # `AWS_SECRET_ACCESS_KEY = "..."` or `STRIPE_SECRET_KEY = "..."` has
+  # other identifier characters in between and slipped through
+  # undetected (reproduced: exit 0 on a file containing exactly that).
+  # Now matches the keyword anywhere in the variable name, not just as
+  # an exact prefix.
+  '[A-Za-z0-9_]*(api[_-]?key|secret|token|password)[A-Za-z0-9_]*["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_/+-]{16,}'
   '://[^/[:space:]:]+:[^/[:space:]@]+@'
 )
 
