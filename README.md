@@ -13,16 +13,22 @@ stack (Postgres, Redis, Qdrant, the Rust gateway, the Python API, and the
 web frontend) and forwards port 5173, which GitHub turns into a real HTTPS
 URL you can open on any device, including a phone browser.
 
-1. **Set two required secrets first** — go to this repo's
-   **Settings → Secrets and variables → Codespaces** and add:
-   - `JWT_SECRET` — any long random string (used to sign auth tokens)
-   - `NOMINATIM_USER_AGENT` — a real identifying contact string, e.g.
-     `YourApp/1.0 (contact: you@example.com)`. Nominatim's usage policy
-     blocks generic/placeholder values.
+1. **Set secrets first** — go to this repo's **Settings → Secrets and
+   variables → Codespaces** and add:
+   - `JWT_SECRET` (required) — any long random string (used to sign auth
+     tokens). `docker-compose.yml` refuses to start the gateway without it.
+   - `NOMINATIM_USER_AGENT` (required) — a real identifying contact
+     string, e.g. `YourApp/1.0 (contact: you@example.com)`. Nominatim's
+     usage policy blocks generic/placeholder values.
+   - `VITE_MAPBOX_ACCESS_TOKEN` (optional, strongly recommended) — a
+     [free Mapbox token](https://account.mapbox.com/access-tokens/).
+     Without it the app still runs, but the map panel shows a "set your
+     token" placeholder instead of an actual map — everything else
+     (search, entities, agents, swarm, alerts) works either way.
 
    (Codespaces secrets are injected as environment variables automatically
-   — `docker-compose.yml` reads both from the environment and refuses to
-   start those services without them.)
+   — `docker-compose.yml`/the web image's build args read all three from
+   the environment.)
 
 2. **Open a Codespace** — from the repo's `Code` button, or from the
    GitHub mobile app: open this repo → the `...` menu → **Open with
