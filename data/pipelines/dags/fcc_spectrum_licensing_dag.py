@@ -100,15 +100,40 @@ def fcc_spectrum_licensing_dag():
             for agency_label, source_slug, resource_id in datasets:
                 offset = 0
                 while True:
-                    resp = client.get(
-                        f"{SOCRATA_BASE_URL}/{resource_id}.json",
-                        params={
-                            "$where": "u_application_status='Accepted'",
-                            "$limit": PAGE_SIZE,
-                            "$offset": offset,
-                        },
-                    )
-                    resp.raise_for_status()
+                    try:
+                        resp = client.get(
+                            f"{SOCRATA_BASE_URL}/{resource_id}.json",
+                            params={
+                                "$where": "u_application_status='Accepted'",
+                                # Socrata's offset+limit paging isn't
+                                # guaranteed stable across calls without an
+                                # explicit deterministic order -- a
+                                # readiness review flagged this could
+                                # silently skip/duplicate rows across
+                                # pages. `:id` is Socrata's own internal
+                                # row identifier, documented for exactly
+                                # this stable-pagination use case.
+                                "$order": ":id",
+                                "$limit": PAGE_SIZE,
+                                "$offset": offset,
+                            },
+                        )
+                        resp.raise_for_status()
+                    except httpx.HTTPError as exc:
+                        # A readiness review found a single transient
+                        # 5xx/429 mid-pagination discarded every
+                        # already-accumulated record, not just this
+                        # dataset's -- fail soft per dataset instead,
+                        # matching opencorporates_sync_dag.py/
+                        # data_gov_search_dag.py's established pattern for
+                        # this exact class of flaky-external-API failure.
+                        import logging
+
+                        logging.getLogger("airflow.task").warning(
+                            "fcc_spectrum_licensing_sync: %s fetch failed at offset %d: %s",
+                            source_slug, offset, exc,
+                        )
+                        break
                     page = resp.json()
                     if not page:
                         break
@@ -181,13 +206,35 @@ def fcc_spectrum_licensing_dag():
             pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
             try:
                 business_rows = await pool.fetch(
-                    "SELECT id, name FROM research_entities WHERE entity_type = 'business'"
+                    "SELECT id, name FROM research_entities WHERE entity_type = 'business' ORDER BY id"
                 )
-                business_by_norm_name: dict[str, str] = {}
+                # A readiness review found that two genuinely distinct
+                # businesses whose names both normalize to the same
+                # string (normalize_name strips legal-form suffixes like
+                # Inc/LLC/Corp -- two unrelated "Example Wireless" filers
+                # under different suffixes would collide) picked a
+                # non-deterministic winner via setdefault, silently
+                # writing a wrong holds_fcc_license fact with no
+                # confidence score and no review path -- unlike
+                # resolve.py's own handling of the identical
+                # normalized-name-alone signal, which scores it at 0.7,
+                # below the 0.8 auto-confirm bar, and requires a second
+                # corroborating signal before auto-linking. FCC filings
+                # have none of resolve.py's other signals available
+                # (no cik/opencorporates_id/ein), so rather than
+                # inventing a second signal, an ambiguous collision here
+                # is marked with `None` and skipped outright below --
+                # conservative by design, matching a public-records tool
+                # that shouldn't record a fact it isn't sure of.
+                business_by_norm_name: dict[str, str | None] = {}
                 for row in business_rows:
                     norm = normalize_name(row["name"])
-                    if norm:
-                        business_by_norm_name.setdefault(norm, row["id"])
+                    if not norm:
+                        continue
+                    if norm in business_by_norm_name:
+                        business_by_norm_name[norm] = None
+                    else:
+                        business_by_norm_name[norm] = row["id"]
 
                 filing_rows = await pool.fetch(
                     "SELECT id, metadata FROM research_entities "
