@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 
 const LINKS = [
   { to: '/', label: 'Map' },
+  { to: '/chat', label: 'Chat' },
   { to: '/agents', label: 'Agents' },
   { to: '/swarm', label: 'Swarm' },
   { to: '/training', label: 'Training' },
@@ -11,9 +12,9 @@ const LINKS = [
 
 /** Phase 5 nav -- switches between the map and the agent-swarm dashboard
  * pages. Kept deliberately tiny (no active-route styling library, no
- * nested menus) since it's five flat routes.
+ * nested menus) since it's a handful of flat routes.
  *
- * `overflow-x-auto` + `flex-nowrap`: five labelled links don't fit next
+ * `overflow-x-auto` + `flex-nowrap`: the labelled links don't fit next
  * to the title in the header on a phone-width screen -- rather than
  * truncate/hide links silently, they scroll horizontally, which stays
  * fully reachable (confirmed against the same 390px-viewport overflow

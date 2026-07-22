@@ -6,6 +6,7 @@ import App from './App.tsx'
 import { AgentDetailPage } from '@/pages/AgentDetailPage'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { ArchitectPage } from '@/pages/ArchitectPage'
+import { ChatPage } from '@/pages/ChatPage'
 import { HeirloomsPage } from '@/pages/HeirloomsPage'
 import { SwarmPage } from '@/pages/SwarmPage'
 import { TrainingPage } from '@/pages/TrainingPage'
@@ -15,6 +16,7 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="/agents" element={<AgentsPage />} />
         <Route path="/agents/:id" element={<AgentDetailPage />} />
         <Route path="/swarm" element={<SwarmPage />} />
