@@ -29,10 +29,28 @@ federal license grant), with the transmitter's real lat/lon in `geom` and
 licensee name/call sign/frequency band in `metadata` -- same "one entity
 type, everything else in metadata" shape newsapi/opencorporates already
 use for a record that spans more than one facet.
-"""
+
+Cross-source blending (Phase 8's "link a business's FCC license... to its
+existing research_entities row" item): a second task,
+link_to_business_entities, connects each FCC filing to an existing
+entity_type='business' row by exact normalized-name match, reusing
+app.graph.normalize.normalize_name -- the identical function
+entity_resolution_dag.py uses for business-to-business dedup, so "the
+same normalized name" means the same thing in both places. This is
+deliberately NOT written as a 'same_as' edge (that means "these two rows
+are the same real-world entity," which an FCC filing and a business
+record are not) and does not extend resolve.py's business-only
+find_candidate_pairs/score_pair machinery (which scores identity-equivalence
+signals -- exact ID columns, same officer -- that don't apply to a filing
+row). Instead it's a new, distinct entity_relationships.relation_type,
+'holds_fcc_license' -- the same free-text column already models
+'subsidiary' and 'same_as', just a third, narrower kind of institutional
+relationship (a business holds a license), not personal relationship
+mapping and not identity-equivalence."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from datetime import datetime
@@ -40,6 +58,7 @@ from datetime import datetime
 import pendulum
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "..", "apps", "api", "python"))
 
 from airflow.sdk import dag, task
 
@@ -141,7 +160,72 @@ def fcc_spectrum_licensing_dag():
 
         return upsert_entities(records)
 
-    load_records(fetch_licenses())
+    @task
+    def link_to_business_entities(loaded_count: int) -> int:
+        """Runs after load_records so it always sees this run's rows
+        (Airflow's TaskFlow dependency via `loaded_count`, unused
+        otherwise). Re-scans every fcc_uls_* filing on each run, not just
+        this run's new ones -- idempotent (ON CONFLICT DO NOTHING) and
+        self-healing: a business entity added after its FCC filing was
+        first ingested still gets linked on the next weekly run."""
+        import asyncio
+
+        import asyncpg
+
+        async def _run() -> int:
+            from app.graph.normalize import normalize_name
+
+            dsn = os.environ.get(
+                "GATEWAY_DATABASE_URL", "postgres://aether:aether@localhost:5432/aether"
+            )
+            pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+            try:
+                business_rows = await pool.fetch(
+                    "SELECT id, name FROM research_entities WHERE entity_type = 'business'"
+                )
+                business_by_norm_name: dict[str, str] = {}
+                for row in business_rows:
+                    norm = normalize_name(row["name"])
+                    if norm:
+                        business_by_norm_name.setdefault(norm, row["id"])
+
+                filing_rows = await pool.fetch(
+                    "SELECT id, metadata FROM research_entities "
+                    "WHERE entity_type = 'government_filing' AND source LIKE 'fcc_uls_%'"
+                )
+
+                linked = 0
+                for row in filing_rows:
+                    metadata = row["metadata"]
+                    if isinstance(metadata, str):
+                        metadata = json.loads(metadata)
+                    licensee = (metadata or {}).get("licensee")
+                    if not licensee:
+                        continue
+
+                    business_id = business_by_norm_name.get(normalize_name(licensee))
+                    if not business_id:
+                        continue
+
+                    result = await pool.execute(
+                        """
+                        INSERT INTO entity_relationships
+                            (parent_entity_id, child_entity_id, relation_type, source)
+                        VALUES ($1, $2, 'holds_fcc_license', 'fcc_spectrum_licensing_sync')
+                        ON CONFLICT DO NOTHING
+                        """,
+                        business_id,
+                        row["id"],
+                    )
+                    if result.endswith(" 1"):
+                        linked += 1
+                return linked
+            finally:
+                await pool.close()
+
+        return asyncio.run(_run())
+
+    link_to_business_entities(load_records(fetch_licenses()))
 
 
 fcc_spectrum_licensing_dag()
