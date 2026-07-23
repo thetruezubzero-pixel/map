@@ -49,17 +49,38 @@ def census_tiger_dag():
         records: list[dict] = []
         with httpx.Client(timeout=20.0) as client:
             for query in queries:
-                resp = client.get(
-                    TIGERWEB_COUNTY_LAYER,
-                    params={
-                        "where": f"NAME LIKE '{query}%'",
-                        "outFields": "NAME,STATE,COUNTY,GEOID,CENTLAT,CENTLON",
-                        "returnGeometry": "false",
-                        "f": "json",
-                    },
-                )
-                resp.raise_for_status()
-                for feature in resp.json().get("features", []):
+                # Escape single quotes before interpolating into the
+                # ArcGIS `where` clause -- a query value containing a `'`
+                # would otherwise break out of the quoted SQL literal
+                # (sibling census_tract_boundary_dag.py validates its input
+                # more strictly; this at least neutralizes the literal
+                # break-out for these free-text county names).
+                safe_query = query.replace("'", "''")
+                # A readiness review found this per-query call had no
+                # try/except -- a single transient TIGERweb failure (5xx,
+                # or a malformed non-JSON body) crashed the whole task,
+                # discarding every other query's records. Fail soft per
+                # query instead.
+                try:
+                    resp = client.get(
+                        TIGERWEB_COUNTY_LAYER,
+                        params={
+                            "where": f"NAME LIKE '{safe_query}%'",
+                            "outFields": "NAME,STATE,COUNTY,GEOID,CENTLAT,CENTLON",
+                            "returnGeometry": "false",
+                            "f": "json",
+                        },
+                    )
+                    resp.raise_for_status()
+                    features = resp.json().get("features", [])
+                except (httpx.HTTPError, ValueError) as exc:
+                    import logging
+
+                    logging.getLogger("airflow.task").warning(
+                        "census_tiger: query %r failed, skipping: %s", query, exc
+                    )
+                    continue
+                for feature in features:
                     attrs = feature["attributes"]
                     try:
                         lat = float(attrs["CENTLAT"])

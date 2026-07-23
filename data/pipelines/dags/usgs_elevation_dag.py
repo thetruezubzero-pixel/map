@@ -53,11 +53,24 @@ def usgs_elevation_dag():
         records: list[dict] = []
         with httpx.Client(timeout=15.0) as client:
             for name, lat, lon in points:
-                resp = client.get(
-                    EPQS_URL, params={"x": lon, "y": lat, "units": "Meters", "wkid": 4326}
-                )
-                resp.raise_for_status()
-                data = resp.json()
+                # A readiness review found this per-point call had no
+                # try/except -- a single transient EPQS failure (5xx, or a
+                # malformed non-JSON body) crashed the whole task,
+                # discarding every other point's records. Fail soft per
+                # point instead.
+                try:
+                    resp = client.get(
+                        EPQS_URL, params={"x": lon, "y": lat, "units": "Meters", "wkid": 4326}
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                except (httpx.HTTPError, ValueError) as exc:
+                    import logging
+
+                    logging.getLogger("airflow.task").warning(
+                        "usgs_elevation: point %r failed, skipping: %s", name, exc
+                    )
+                    continue
                 elevation = data.get("value")
                 if elevation is None:
                     continue

@@ -54,12 +54,26 @@ def osm_ingestion_dag():
         records: list[dict] = []
         with httpx.Client(timeout=15.0, headers={"User-Agent": user_agent}) as client:
             for query in seed_queries:
-                resp = client.get(
-                    f"{base_url}/search",
-                    params={"q": query, "format": "jsonv2", "limit": 5, "addressdetails": 1},
-                )
-                resp.raise_for_status()
-                for hit in resp.json():
+                # A readiness review found this per-query call had no
+                # try/except -- a single transient Nominatim failure (a
+                # 5xx/429, or a malformed non-JSON body) crashed the whole
+                # task, discarding every other query's records already
+                # collected in this run. Fail soft per query instead.
+                try:
+                    resp = client.get(
+                        f"{base_url}/search",
+                        params={"q": query, "format": "jsonv2", "limit": 5, "addressdetails": 1},
+                    )
+                    resp.raise_for_status()
+                    hits = resp.json()
+                except (httpx.HTTPError, ValueError) as exc:
+                    import logging
+
+                    logging.getLogger("airflow.task").warning(
+                        "osm_ingestion: query %r failed, skipping: %s", query, exc
+                    )
+                    continue
+                for hit in hits:
                     records.append(
                         scrub_record(
                             {

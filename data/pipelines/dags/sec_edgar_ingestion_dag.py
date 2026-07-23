@@ -81,9 +81,15 @@ def sec_edgar_ingestion_dag():
                 )
             )
 
-            filings = company.get_filings(form=DEFAULT_FORMS).head(FILINGS_PER_TICKER)
-            for f in filings:
-                records.append(
+            # A readiness review found only the `Company(ticker)` call
+            # above was wrapped in try/except -- a get_filings() failure
+            # (or a malformed filing object missing an expected attribute)
+            # crashed the whole task, discarding every ticker's records
+            # already appended in this run, including the one just added
+            # for `ticker` itself above.
+            try:
+                filings = company.get_filings(form=DEFAULT_FORMS).head(FILINGS_PER_TICKER)
+                filing_records = [
                     scrub_record(
                         {
                             # accession_no included: two filings of the
@@ -109,7 +115,11 @@ def sec_edgar_ingestion_dag():
                             },
                         }
                     )
-                )
+                    for f in filings
+                ]
+            except Exception:
+                continue
+            records.extend(filing_records)
 
         return records
 

@@ -72,7 +72,18 @@ def opencorporates_sync_dag():
                     # behavior this source's streaming producer
                     # (app/streaming/producers/opencorporates_delta.py)
                     # already has.
-                    logger.warning("OpenCorporates search failed for %r, skipping: %s", term, exc)
+                    # Redact the token before logging: it's sent as a URL
+                    # query param (see the params dict above), and
+                    # httpx.HTTPStatusError.__str__() includes the full
+                    # request URL -- so logging the raw exception on every
+                    # (now-routine) 401/429 would print the API token in
+                    # cleartext to the task log. A readiness review flagged
+                    # this as an active secret leak.
+                    logger.warning(
+                        "OpenCorporates search failed for %r, skipping: %s",
+                        term,
+                        str(exc).replace(api_token, "***") if api_token else str(exc),
+                    )
                     continue
                 companies = resp.json().get("results", {}).get("companies", [])
                 for c in companies:
