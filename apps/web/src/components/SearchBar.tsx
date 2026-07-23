@@ -100,11 +100,11 @@ export function SearchBar() {
 
   return (
     <div className="relative" ref={containerRef}>
-      <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-3">
-        <Search className="h-4 w-4 text-text-muted" aria-hidden="true" />
+      <div className="flex items-center gap-1 rounded-md border border-border bg-surface px-2 sm:gap-2 sm:px-3">
+        <Search className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
         <Input
-          className="border-0 bg-transparent px-0 focus-visible:ring-0"
-          placeholder="Search an address or public record..."
+          className="border-0 bg-transparent px-0 text-xs focus-visible:ring-0 sm:text-sm"
+          placeholder="Search…"
           aria-label="Search an address or public record"
           role="combobox"
           aria-expanded={open && suggestions.length > 0}
@@ -121,24 +121,25 @@ export function SearchBar() {
           <Button
             variant="ghost"
             size="icon"
+            className="h-6 w-6 shrink-0"
             aria-label="Clear search"
             onClick={() => {
               setQuery('')
               setSuggestions([])
             }}
           >
-            <X className="h-4 w-4" aria-hidden="true" />
+            <X className="h-3 w-3" aria-hidden="true" />
           </Button>
         )}
       </div>
 
       {open && suggestions.length > 0 && (
-        <ul id="search-suggestions" role="listbox" className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-lg">
+        <ul id="search-suggestions" role="listbox" className="absolute left-0 right-0 top-full z-10 mt-1 max-h-[40vh] overflow-y-auto rounded-md border border-border bg-surface shadow-lg sm:max-h-none">
           {suggestions.map((hit) => (
             <li key={hit.place_id} role="option" aria-selected="false">
               <button
                 type="button"
-                className="w-full truncate px-3 py-2 text-left text-sm hover:bg-surface-2"
+                className="w-full truncate px-2 py-1.5 text-left text-xs hover:bg-surface-2 sm:px-3 sm:py-2 sm:text-sm"
                 onClick={() => {
                   setViewport({ longitude: Number(hit.lon), latitude: Number(hit.lat), zoom: 14 })
                   setQuery(hit.display_name)

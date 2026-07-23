@@ -22,7 +22,7 @@ const LINKS = [
 export function DashboardNav() {
   const location = useLocation()
   return (
-    <nav aria-label="Primary" className="flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto text-sm">
+    <nav aria-label="Primary" className="flex min-w-0 flex-nowrap items-center gap-0.5 overflow-x-auto text-xs sm:gap-1 sm:text-sm">
       {LINKS.map((link) => {
         const active = location.pathname === link.to
         return (
@@ -30,7 +30,7 @@ export function DashboardNav() {
             key={link.to}
             to={link.to}
             aria-current={active ? 'page' : undefined}
-            className={`shrink-0 rounded-md px-2.5 py-1.5 ${
+            className={`shrink-0 rounded-md px-2 py-1 sm:px-2.5 sm:py-1.5 ${
               active ? 'bg-accent text-white' : 'text-text-muted hover:bg-surface-2 hover:text-text'
             }`}
           >
