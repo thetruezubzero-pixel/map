@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload build logs
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ios-build-logs
           path: apps/ios-app/build.log
@@ -90,7 +90,7 @@ jobs:
 
       - name: Upload archive (if built)
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: AetherSovereignOS-archive
           path: apps/ios-app/build/AetherSovereignOS.xcarchive/
