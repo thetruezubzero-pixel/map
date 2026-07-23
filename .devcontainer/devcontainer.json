@@ -11,5 +11,6 @@
       "onAutoForward": "openBrowser"
     }
   },
-  "postStartCommand": "docker compose up -d postgres redis qdrant gateway python-api web"
+  "postCreateCommand": "bash .devcontainer/bootstrap-env.sh",
+  "postStartCommand": "bash .devcontainer/start.sh"
 }

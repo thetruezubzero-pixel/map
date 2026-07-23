@@ -95,12 +95,19 @@ interface MapState {
    * query filter, so a user can search broadly then hide a layer. */
   visibleEntityTypes: Set<EntityType>
   toggleEntityTypeVisibility: (entityType: EntityType) => void
+  /** Replace the whole visible-types set at once -- used by the agent's
+   * "show only businesses" style action (see lib/mapActions.ts). */
+  setVisibleEntityTypes: (entityTypes: Set<EntityType>) => void
 
   selectedEntityId: string | null
   setSelectedEntityId: (id: string | null) => void
 
   layers: Layers
   toggleLayer: (layer: keyof Layers) => void
+  /** Set a layer to an explicit on/off state (vs. toggle) -- used by the
+   * agent's "show/hide the <layer>" action so the outcome is deterministic
+   * regardless of the layer's current state. */
+  setLayer: (layer: keyof Layers, enabled: boolean) => void
 }
 
 const defaultFilters: Filters = {
@@ -136,6 +143,7 @@ export const useMapStore = create<MapState>((set) => ({
       else next.add(entityType)
       return { visibleEntityTypes: next }
     }),
+  setVisibleEntityTypes: (visibleEntityTypes) => set({ visibleEntityTypes }),
 
   selectedEntityId: null,
   setSelectedEntityId: (selectedEntityId) => set({ selectedEntityId }),
@@ -150,4 +158,5 @@ export const useMapStore = create<MapState>((set) => ({
     zoningDistricts: false,
   },
   toggleLayer: (layer) => set((s) => ({ layers: { ...s.layers, [layer]: !s.layers[layer] } })),
+  setLayer: (layer, enabled) => set((s) => ({ layers: { ...s.layers, [layer]: enabled } })),
 }))

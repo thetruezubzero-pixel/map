@@ -8,6 +8,7 @@ import { EntityDetailPanel } from '@/components/EntityDetailPanel'
 import { AlertPanel } from '@/components/AlertPanel'
 import { SystemHealthPanel } from '@/components/SystemHealthPanel'
 import { DashboardNav } from '@/components/DashboardNav'
+import { AgentCommandBar } from '@/components/AgentCommandBar'
 import { Button } from '@/components/ui/button'
 import { useMapStore } from '@/store/useMapStore'
 import { useAlertStore } from '@/store/useAlertStore'
@@ -139,6 +140,10 @@ function App() {
           >
             <MapView />
           </Suspense>
+          {/* The conversational control: talk to the map, the agent drives
+              it. Overlaid on the map so it's the primary interaction, not
+              another panel to hunt for. */}
+          <AgentCommandBar />
         </main>
 
         <aside
@@ -181,7 +186,11 @@ function App() {
             role="dialog"
             aria-modal="true"
             aria-label={mobilePanel === 'filters' ? 'Filters and research' : 'Search results'}
-            className="fixed inset-0 z-40 flex lg:hidden"
+            /* z-[2000]: a modal must cover everything, including the
+               AgentCommandBar (z-1000) overlaid on the map -- at the old
+               z-40 the floating command bar painted through the dialog.
+               See the z-index scale in index.css. */
+            className="fixed inset-0 z-[2000] flex lg:hidden"
           >
             <button
               type="button"

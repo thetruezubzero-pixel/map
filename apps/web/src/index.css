@@ -30,15 +30,57 @@ body {
   font-family: var(--font-sans);
 }
 
-.mapboxgl-popup-content {
+/* ---------------------------------------------------------------------
+ * z-index scale (single source of truth -- keep component z-* in sync)
+ *
+ * Leaflet's own panes/controls occupy 200-1000 (see node_modules/leaflet/
+ * dist/leaflet.css: tiles 200 ... popups 700 ... control corners 1000).
+ * App overlays must be placed relative to THAT, not to each other:
+ *
+ *   map content ...................... Leaflet 200-1000 (external, fixed)
+ *   1000  AgentCommandBar ............ floats over the map, above popups
+ *   1200  SearchBar suggestions ...... header popover, must clear the map
+ *   2000  mobile filters/results dialog ... modal, must cover everything
+ *
+ * The command bar (1000) can tie Leaflet's control corners; they never
+ * share screen space (bar is bottom-center; zoom is top-right; the
+ * attribution is lifted above the bar below, so it stays visible).
+ * ------------------------------------------------------------------- */
+
+/* Leaflet popups (the map switched from Mapbox GL to Leaflet -- these used
+ * to target .mapboxgl-popup-* and silently stopped applying, leaving the
+ * selected-entity popup with Leaflet's default light styling on the dark
+ * map). Theme them to match. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
   background: var(--color-surface) !important;
   color: var(--color-text) !important;
   border: 1px solid var(--color-border);
+}
+.leaflet-popup-content-wrapper {
   border-radius: 8px;
 }
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--color-text-muted) !important;
+}
 
-.mapboxgl-popup-tip {
-  border-top-color: var(--color-surface) !important;
+/* Keep the OpenStreetMap/Carto attribution readable and clear of the
+ * AgentCommandBar. On narrow screens the centered command pill spans most
+ * of the width at the very bottom, so lift the attribution above it; on
+ * wide screens the pill is centered and the bottom-right corner is already
+ * free, so no lift is needed. Attribution must stay visible (tile
+ * licensing), so this is positioning, never hiding. */
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent) !important;
+  color: var(--color-text-muted) !important;
+}
+.leaflet-control-attribution a {
+  color: var(--color-text) !important;
+}
+@media (max-width: 720px) {
+  .leaflet-bottom.leaflet-right {
+    bottom: 3.5rem; /* clears the ~48px command pill + its 12px padding */
+  }
 }
 
 @media print {

@@ -22,10 +22,17 @@ You may be given a "Grounding records" list below, pulled live from this \
 platform's own database -- each has a source, entity_type, and \
 retrieved_at. Base any factual claim about a specific named entity only on \
 those records; if grounding is empty or doesn't cover the question, say so \
-instead of inventing details. You may suggest the user start a full \
-research job (the "Research" panel) for a deeper, multi-source, \
-human-reviewed report -- this chat is a quick, best-effort answer, not a \
-substitute for that pipeline.
+instead of inventing details.
+
+You are wired directly into the map: the same request the user just made \
+is also parsed into map actions and executed automatically (the entities \
+you're grounded on get plotted, the map moves/filters as asked, and \
+"research/investigate X" launches the full multi-source swarm). So speak \
+as if the map is already responding -- "I've put these on the map", "I'm \
+running a full research job on X (it's multi-source and human-reviewed)" \
+-- rather than telling the user to go find a separate panel or button. \
+That deeper research job is still the human-reviewed pipeline; this chat \
+reply is the quick, best-effort answer alongside it.
 
 Always reply in English, regardless of what language the user writes in \
 or what internal representation any other part of this platform uses \
@@ -94,9 +101,16 @@ class ChatAgent(Agent):
         # OR-joined to_tsquery (any shared content word is a candidate,
         # ranked by ts_rank so multi-word matches still score highest)
         # fixed it -- confirmed live against the same seeded row.
+        # lon/lat are selected (via PostGIS ST_X/ST_Y on the geom column) so
+        # the grounded entities the agent cites can be plotted on the map --
+        # the conversational agent and the map draw from the same
+        # research_entities rows, and dropping the coordinates here was the
+        # only reason a grounded entity couldn't appear as a marker. A row
+        # with no geometry simply returns NULL lon/lat and stays chat-only.
         rows = await pool.fetch(
             """
-            SELECT id, name, entity_type, source, license, retrieved_at
+            SELECT id, name, entity_type, source, license, retrieved_at,
+                   ST_X(geom::geometry) AS lon, ST_Y(geom::geometry) AS lat
             FROM research_entities
             WHERE search_vector @@ to_tsquery('english', replace(plainto_tsquery('english', $1)::text, ' & ', ' | '))
             ORDER BY ts_rank(
@@ -116,6 +130,8 @@ class ChatAgent(Agent):
                 "source": r["source"],
                 "license": r["license"],
                 "retrieved_at": r["retrieved_at"].isoformat(),
+                "lon": r["lon"],
+                "lat": r["lat"],
             }
             for r in rows
         ]

@@ -501,6 +501,67 @@ category as the zoning/census-tract records Phase 6 already ingests.
   data source lands) follows the identical pattern -- a new task, same
   normalize_name-based matching, a new relation_type.
 
+## Phase 10 (groundwork built) — conversational map control
+
+The connective spine for "you talk, the agent operates the map." Instead
+of the user driving eight separate dashboards, they type plain English on
+the map and the agent performs the search/filter/layer/viewport changes
+itself.
+
+- **Built**: a typed `MapAction` protocol (`app/agents/map_intent.py`
+  `MapAction`, mirrored by `apps/web/src/lib/api.ts`'s `MapAction`) and a
+  deterministic `parse_map_intent()` that turns plain English into those
+  actions **with no API key required** -- regex/keyword matching over a
+  declarative synonym table, so the map responds to commands even with
+  `OPENROUTER_API_KEY` unset. When a key is present, `chat_agent` still
+  writes the conversational reply on top; the actions are additive.
+- **Built**: `POST /chat` now returns `actions: list[MapAction]` alongside
+  `reply`/`grounding` (no new persistence, still stateless). The frontend
+  executes them through a single dispatch point, `apps/web/src/lib/
+  mapActions.ts`'s `applyMapActions` (geocodes named places via the
+  gateway's Nominatim proxy, runs the real `/search`, updates
+  `useMapStore`), driven from `AgentCommandBar` overlaid on the map.
+- **Scope-safe by construction**: the parser only ever emits the
+  DB-constrained entity allowlist (business/government_filing/location/
+  poi/news_mention) -- there is no person type and no device/tracking
+  action type, so a "track this phone" style request produces no map
+  action (the model reply, or the deterministic fallback, handles the
+  refusal). Reuses the already-rate-limited `/py-api/chat` nginx location,
+  so it adds no new unthrottled external-cost path. Tests:
+  `tests/test_map_intent.py` (15) and `apps/web/src/lib/mapActions.test.ts`
+  (9).
+- **Extensible on purpose** (per the repo owner's "this will grow" note):
+  a new agent capability is one `MapActionType` value + one matcher in the
+  parser + one case in `applyMapActions`. This is the seam every later
+  "idea" (richer entity-graph connectivity, clustering, new record layers)
+  plugs into so it becomes something the agent *does*, not another panel.
+- **Built (combining the conversational layer with the research swarm)**:
+  - *Grounding on the map (Combine A)*: `chat_agent._search_grounding` now
+    selects `ST_X/ST_Y(geom)` and `ChatGroundingRecord` carries `lon/lat`,
+    so the entities the chat agent cites are plotted on the map
+    (`plotLocatedRecords`) when a turn didn't otherwise populate it. The
+    conversational agent and the map now draw from the same
+    `research_entities` rows.
+  - *Research hand-off (Combine B)*: a new `research` `MapAction` + parser
+    trigger ("research/investigate/dig into/deep dive on X") launches the
+    full `POST /research` swarm from the command bar; `AgentCommandBar`
+    polls the job and plots its located records + surfaces the summary when
+    it lands. Scope is still enforced by the swarm's `query_analyzer`
+    (empty plan for out-of-scope), and human review is unchanged -- a
+    finished job sits in `awaiting_review`; the map only *displays* it,
+    never auto-finalizes. Reuses the already-rate-limited create path.
+  - The `chat_agent` system prompt now knows it's wired to the map (speaks
+    as "I've put these on the map / I'm running a full research job on X").
+- **Not built (deliberate next steps)**: *persisting live research results
+  into `research_entities`* via `upsert_entities` (Combine C) so a job's
+  findings become permanently searchable like DAG-ingested data -- this
+  touches the DB write path and the `(source, entity_type, name)`
+  idempotency guardrail, so it's a separate, deliberate change; real
+  inter-agent deliberation for disagreement cases (see the
+  async-cooking-giraffe plan); and marker clustering for large result sets
+  (`EntityGraphView` tick-throttling caveat in Phase 3 applies to any
+  "whole graph" view).
+
 ## Phase 9 (built) — Native iOS App
 
 Production-ready iOS application for iPhone/iPad, enabling full access to

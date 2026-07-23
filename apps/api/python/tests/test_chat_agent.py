@@ -17,6 +17,8 @@ class _FakePool:
                 "source": "opencorporates",
                 "license": "CC0",
                 "retrieved_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                "lon": -97.7431,
+                "lat": 30.2672,
             }
         ]
 
@@ -56,6 +58,10 @@ def test_run_falls_back_safely_when_openrouter_fails_and_lists_grounding(monkeyp
     assert "Acme Test Widgets LLC" in reply
     assert len(grounding) == 1
     assert grounding[0]["name"] == "Acme Test Widgets LLC"
+    # Grounding carries coordinates so the frontend can plot the cited
+    # entity on the map (Combine A).
+    assert grounding[0]["lon"] == -97.7431
+    assert grounding[0]["lat"] == 30.2672
 
 
 def test_run_skips_grounding_lookup_for_empty_latest_user_message(monkeypatch):

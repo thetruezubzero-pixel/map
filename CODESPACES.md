@@ -5,44 +5,46 @@ Run Aether Sovereign OS on GitHub Codespaces for remote development on any devic
 ## Quick Start (2 minutes)
 
 1. **Create a Codespace**: Go to your repo's `Code` button → `Create codespace on main`
-2. **Wait for container build** (~2-3 minutes for first-time build)
+2. **Wait for container build** (~2-3 minutes for first-time build). On
+   creation, `.devcontainer/bootstrap-env.sh` auto-generates the local
+   secrets and `.devcontainer/start.sh` brings the stack up and waits
+   until the frontend is actually serving.
 3. **Forward port 5173** and open it in your browser
-4. **Map, search, and entity browsing work immediately** — no additional secrets needed
+4. **Map, search, and entity browsing work immediately** — no secrets to set
 
 ## Environment Variables (GitHub Codespaces Secrets)
 
-Add these to your GitHub repo's **Settings → Codespaces → Codespaces Secrets** for each secret to be automatically available to all new Codespaces.
+**You don't need to set anything to get started.** The bootstrap script
+generates the machine-local secrets on first boot, and any secret you *do*
+add as a Codespaces Secret (**Settings → Codespaces → Codespaces Secrets**)
+always takes precedence over the generated one — the bootstrap never
+overwrites an operator-provided value.
 
-### Tier 1: Required — App refuses to start without these
+### Tier 1: Auto-generated for you — nothing to do
 
 #### `JWT_SECRET`
 - **What it is**: Long random string for signing authentication tokens
-- **Lifetime**: Fixed, never expires, never needs rotating
-- **How to set**: Generate one with:
-  ```bash
-  python3 -c "import secrets; print(secrets.token_hex(32))"
-  ```
-- **Why it matters**: Without this, the gateway and python-api won't start
-- **Already correct in the repo?** No — `.env.example` has a placeholder `change-me-in-production`. You must generate a real one.
+- **Handled how**: `bootstrap-env.sh` generates a cryptographically random
+  value on first boot. The `${JWT_SECRET:?...}` guard in
+  `docker-compose.yml` stays in force — it now passes because a real value
+  exists, rather than aborting the stack.
+- **Set it yourself only if**: you want a *specific* value shared across
+  environments — add it as a Codespaces Secret and it wins over the
+  generated one.
 
 #### `NOMINATIM_USER_AGENT`
 - **What it is**: Identifying text for Nominatim's usage policy (not a credential)
-- **Example**: `YourApp/1.0 (contact: you@example.com)` — use your real email
-- **Lifetime**: Fixed, never changes
-- **Why it matters**: Nominatim (OpenStreetMap's geocoding service) blocks requests from placeholder domains
-- **Already correct?** No — needs your real contact email
-
-### Tier 2: Recommended — Core features work without these but fall back to placeholders
+- **Handled how**: defaulted to `AetherSovereignOS/1.0 (contact:
+  <your-github-user>@users.noreply.github.com)` — a real, non-placeholder
+  contact so Nominatim doesn't block geocoding.
+- **Set it yourself only if**: you'd rather use a different contact address.
 
 #### `HEIRLOOM_DEVICE_KEY`
 - **What it is**: 64-character hex string for encrypting agent weight snapshots (AES-256-GCM)
-- **Lifetime**: Fixed, generated once
-- **How to set**: Generate one with:
-  ```bash
-  python3 -c "import secrets; print(secrets.token_hex(32))"
-  ```
-- **Why it matters**: Required for the "Export heirloom" button on the `/heirlooms` page to work
-- **Already correct?** No — `.env.example` is empty
+- **Handled how**: auto-generated on first boot, so the "Export heirloom"
+  button on `/heirlooms` works out of the box.
+- **Set it yourself only if**: you need the same key across environments to
+  decrypt heirlooms exported elsewhere.
 
 ### Tier 3: **Genuinely Optional** — App behaves identically without these
 
