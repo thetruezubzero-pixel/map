@@ -31,23 +31,34 @@ done < <(git ls-files --others --exclude-standard -- . ':(exclude)*.md' 2>/dev/n
 diff_content="$diff_content
 $untracked_content"
 
+# Two fixes vs. the original, both confirmed as real bypasses:
+#  (1) `class[[:space:]]+Person\b` required "Person" to be a standalone
+#      word -- a class literally named `PersonProfile` never matched (the
+#      \b needs a non-word char right after "Person", which a longer
+#      identifier doesn't have). Broadened to catch "person" as a
+#      substring anywhere in the class name.
+#  (2) every `[^\n]{0,N}` bound was inherently single-line (grep without
+#      -z matches line-by-line), so a value split across lines
+#      (`entity_type = (\n "person"\n)`, a normal way to wrap a longer
+#      assignment) never matched at all. Converted to grep -Pzo
+#      (null-data mode) with `(?s)` dotall so `.{0,N}` spans newlines.
 banned=(
-  "entity_type[^\n]{0,20}['\"]person['\"]"
+  "(?s)entity_type.{0,40}['\"]person['\"]"
   "EntityType\.person"
-  "class[[:space:]]+Person\b"
-  "bluetooth[^\n]{0,25}(scan|discover|beacon)"
-  "wifi[^\n]{0,25}(scan|discover)"
+  "class[[:space:]]+[A-Za-z_]*[Pp]erson[A-Za-z_]*"
+  "(?s)bluetooth.{0,40}(scan|discover|beacon)"
+  "(?s)wifi.{0,40}(scan|discover)"
   "\bimsi\b"
-  "mac[_-]?address[^\n]{0,25}(harvest|track|scan)"
-  "opsec[^\n]{0,25}(decoy|evasion)"
-  "fingerprint[^\n]{0,25}randomiz"
+  "(?s)mac[_-]?address.{0,40}(harvest|track|scan)"
+  "(?s)opsec.{0,40}(decoy|evasion)"
+  "(?s)fingerprint.{0,40}randomiz"
   "\bzk-snark"
   "\bdid:[a-z]+:"
 )
 
 hits=""
 for p in "${banned[@]}"; do
-  m=$(echo "$diff_content" | grep -inE "$p" || true)
+  m=$(printf '%s' "$diff_content" | grep -Pzoi -- "$p" 2>/dev/null | tr '\0' '\n' || true)
   if [ -n "$m" ]; then
     hits="$hits
 [pattern: $p]
