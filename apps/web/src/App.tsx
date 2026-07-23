@@ -186,7 +186,11 @@ function App() {
             role="dialog"
             aria-modal="true"
             aria-label={mobilePanel === 'filters' ? 'Filters and research' : 'Search results'}
-            className="fixed inset-0 z-40 flex lg:hidden"
+            /* z-[2000]: a modal must cover everything, including the
+               AgentCommandBar (z-1000) overlaid on the map -- at the old
+               z-40 the floating command bar painted through the dialog.
+               See the z-index scale in index.css. */
+            className="fixed inset-0 z-[2000] flex lg:hidden"
           >
             <button
               type="button"

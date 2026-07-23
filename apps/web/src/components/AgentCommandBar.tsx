@@ -112,6 +112,12 @@ export function AgentCommandBar() {
   }
 
   return (
+    // z-[1000]: floats over the map (above Leaflet popups at 700), below
+    // the mobile dialog (2000). pointer-events-none on the wrapper so the
+    // empty area around the centered bar never blocks map interaction --
+    // only the bar itself (pointer-events-auto) is interactive. Confined to
+    // <main>, so it never overlaps the left/right sidebars. See the z-index
+    // scale in index.css.
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1000] flex justify-center p-3 sm:p-4">
       <div className="pointer-events-auto w-full max-w-2xl">
         {(reply || notes.length > 0) && (

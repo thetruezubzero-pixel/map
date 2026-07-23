@@ -133,8 +133,12 @@ export function SearchBar() {
         )}
       </div>
 
+      {/* z-[1200]: the dropdown hangs from the header down over the map;
+          Leaflet's tile/marker/control panes go up to z-index 1000, so a
+          lower value (was z-10) let the map paint over the suggestions.
+          See the z-index scale in index.css. */}
       {open && suggestions.length > 0 && (
-        <ul id="search-suggestions" role="listbox" className="absolute left-0 right-0 top-full z-10 mt-1 max-h-[40vh] overflow-y-auto rounded-md border border-border bg-surface shadow-lg sm:max-h-none">
+        <ul id="search-suggestions" role="listbox" className="absolute left-0 right-0 top-full z-[1200] mt-1 max-h-[40vh] overflow-y-auto rounded-md border border-border bg-surface shadow-lg sm:max-h-none">
           {suggestions.map((hit) => (
             <li key={hit.place_id} role="option" aria-selected="false">
               <button
