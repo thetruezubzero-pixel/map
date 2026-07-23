@@ -15,14 +15,43 @@ export interface Filters {
   dateTo: string | null
 }
 
+// Open-source tile layer definitions (no credentials required)
 export const BASE_STYLES = {
-  streets: 'mapbox://styles/mapbox/dark-v11',
-  satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
-  outdoors: 'mapbox://styles/mapbox/outdoors-v12',
-  light: 'mapbox://styles/mapbox/light-v11',
-  satelliteOnly: 'mapbox://styles/mapbox/satellite-v9',
-  navigationDay: 'mapbox://styles/mapbox/navigation-day-v1',
-  navigationNight: 'mapbox://styles/mapbox/navigation-night-v1',
+  streets: {
+    name: 'OpenStreetMap',
+    attribution: '© OpenStreetMap contributors',
+    tiles: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  },
+  satellite: {
+    name: 'USGS Satellite',
+    attribution: '© USGS',
+    tiles: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
+  },
+  outdoors: {
+    name: 'OpenTopoMap',
+    attribution: '© OpenStreetMap contributors, © OpenTopoMap',
+    tiles: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+  },
+  light: {
+    name: 'CartoDB Positron',
+    attribution: '© OpenStreetMap contributors, © CartoDB',
+    tiles: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  },
+  satelliteOnly: {
+    name: 'GEBCO Elevation',
+    attribution: '© GEBCO',
+    tiles: 'https://www.gebco.net/data_and_products/gridded_bathymetry_data/',
+  },
+  navigationDay: {
+    name: 'CartoDB Voyager',
+    attribution: '© OpenStreetMap contributors, © CartoDB',
+    tiles: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  },
+  navigationNight: {
+    name: 'CartoDB Dark',
+    attribution: '© OpenStreetMap contributors, © CartoDB',
+    tiles: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png',
+  },
 } as const
 export type BaseStyle = keyof typeof BASE_STYLES
 

@@ -12,10 +12,8 @@ import { Button } from '@/components/ui/button'
 import { useMapStore } from '@/store/useMapStore'
 import { useAlertStore } from '@/store/useAlertStore'
 
-// mapbox-gl is a ~1.8MB chunk (dominates initial load -- see audit: it
-// alone accounted for most of the ~3.6s TTI measured on throttled 3G).
-// Deferring it behind React.lazy lets the rest of the shell (search,
-// filters, header) become interactive without waiting on it.
+// Defer map rendering with React.lazy to prioritize search/filters/header
+// interactivity (leaflet bundle with GeoJSON rendering can be deferred)
 const MapView = lazy(() => import('@/components/MapView').then((m) => ({ default: m.MapView })))
 
 // Below `lg`, the two always-visible desktop sidebars (w-72 + w-80) don't
