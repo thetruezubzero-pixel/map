@@ -204,8 +204,19 @@ async def propose_change(
             await log("branch_created", branch_name=branch_name)
 
             target_path = _assert_resolves_within_project_root(project_root, file_path)
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(new_content, encoding="utf-8")
+
+            def _write() -> None:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.write_text(new_content, encoding="utf-8")
+
+            # A readiness review found this ran as plain synchronous
+            # filesystem I/O directly on the event loop while holding
+            # GIT_WORKING_TREE_LOCK -- same bug class as every git
+            # subprocess call in this function (and architect_committer's
+            # equivalent PLAN_DOC_FILENAME write), just as capable of
+            # freezing every concurrent request on this single-worker
+            # service for its duration.
+            await asyncio.to_thread(_write)
             await _run_git(project_root, "add", file_path)
             await _run_git(
                 project_root,

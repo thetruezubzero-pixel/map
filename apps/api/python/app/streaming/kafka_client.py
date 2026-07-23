@@ -158,6 +158,18 @@ def make_avro_consumer(topic: str, group_id: str) -> tuple[Consumer, AvroDeseria
             "bootstrap.servers": settings.kafka_bootstrap_servers,
             "group.id": group_id,
             "auto.offset.reset": "earliest",
+            # A readiness review found this consumer (currently only
+            # alert_dispatcher.py) relying on librdkafka's default
+            # enable.auto.commit=true -- the background auto-committer
+            # advances the committed offset on its own timer, independent
+            # of whether the application finished processing the message
+            # it most recently polled. A crash between poll() returning a
+            # detected-pattern message and dispatch_pattern() finishing
+            # its user_alerts INSERT could let the committer advance past
+            # that offset first, silently dropping the alert on restart
+            # with no error anywhere. Callers must commit manually
+            # (per-message, after successful processing) instead.
+            "enable.auto.commit": False,
         }
     )
     consumer.subscribe([topic])
