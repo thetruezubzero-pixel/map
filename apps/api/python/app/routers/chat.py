@@ -72,9 +72,13 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     actions, action_summary = parse_map_intent(latest_user)
 
     reply, grounding = await chat_agent.run(pool, messages)
-    # If the model degraded to its generic can't-reach-model fallback but we
-    # DID execute real map actions, prefer telling the user what happened.
-    if action_summary and reply.startswith("I couldn't reach the language model"):
+    # When the model is unreachable (no OPENROUTER_API_KEY), chat_agent still
+    # returns a useful fallback: if it grounded any records it names them, so
+    # keep that. Only when there's NO grounding to show is the deterministic
+    # action summary ("searching for X near Y") the more useful reply than
+    # the generic "try the research panel" line.
+    model_unreachable = reply.startswith("I couldn't reach the language model")
+    if action_summary and model_unreachable and not grounding:
         reply = action_summary
 
     return ChatResponse(
