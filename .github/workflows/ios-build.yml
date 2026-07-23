@@ -26,7 +26,49 @@ jobs:
           xcrun xcode-select --version
           xcode-select -p
 
+      # apps/ios-app/ is a scaffold (Swift sources, plists, Podfile,
+      # metadata) with no committed .xcodeproj/.xcworkspace yet -- see
+      # ROADMAP.md "Phase 9". CocoaPods and xcodebuild both require a real
+      # Xcode project, so those steps run ONLY once one is committed. Until
+      # then this job validates the scaffold rather than hard-failing on a
+      # build it structurally cannot perform. (Before, the whole job failed
+      # at `pod install` with "Could not automatically select an Xcode
+      # project", which is expected for a project-less scaffold, not a
+      # regression to chase.)
+      - name: Validate iOS scaffold
+        working-directory: apps/ios-app
+        run: |
+          echo "Validating iOS scaffold files..."
+          missing=0
+          for f in App.swift Info.plist Podfile Entitlements.plist Build.xcconfig; do
+            if [ -f "$f" ]; then echo "  OK  $f"; else echo "  MISSING  $f"; missing=1; fi
+          done
+          echo "Linting plists..."
+          for p in Info.plist Entitlements.plist ExportOptions_AppStore.plist ExportOptions_TestFlight.plist; do
+            if [ -f "$p" ]; then plutil -lint "$p" || missing=1; fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "iOS scaffold validation failed"
+            exit 1
+          fi
+          echo "iOS scaffold validated"
+
+      - name: Detect Xcode project
+        id: xcodeproj
+        working-directory: apps/ios-app
+        run: |
+          if ls *.xcworkspace >/dev/null 2>&1 || ls *.xcodeproj >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Found an Xcode project/workspace -- will run pod install + archive."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No .xcodeproj/.xcworkspace committed yet -- skipping pod install + archive."
+            echo "A real Xcode project + Apple signing are required before an actual build;"
+            echo "see apps/ios-app/README.md and ROADMAP.md Phase 9."
+          fi
+
       - name: Install dependencies
+        if: steps.xcodeproj.outputs.present == 'true'
         working-directory: apps/ios-app
         run: |
           echo "Installing CocoaPods dependencies..."
@@ -34,16 +76,18 @@ jobs:
           pod install --repo-update
 
       - name: Check build settings
+        if: steps.xcodeproj.outputs.present == 'true'
         working-directory: apps/ios-app
         run: |
           echo "Checking Xcode project structure..."
           ls -la
           if [ ! -f "AetherSovereignOS.xcworkspace/contents.xcworkspacedata" ]; then
-            echo "❌ Workspace not found - pod install may have failed"
+            echo "Workspace not found - pod install may have failed"
             exit 1
           fi
 
       - name: Build for App Store (unsigned)
+        if: steps.xcodeproj.outputs.present == 'true'
         working-directory: apps/ios-app
         run: |
           echo "Building release archive..."
@@ -58,16 +102,18 @@ jobs:
         continue-on-error: true  # Non-critical for CI (code signing needs manual setup)
 
       - name: Check archive
+        if: steps.xcodeproj.outputs.present == 'true'
         working-directory: apps/ios-app
         run: |
           if [ -d "./build/AetherSovereignOS.xcarchive" ]; then
-            echo "✅ Archive created successfully"
+            echo "Archive created successfully"
             du -sh ./build/AetherSovereignOS.xcarchive
           else
-            echo "⚠️  Archive not created (expected without code signing creds)"
+            echo "Archive not created (expected without code signing creds)"
           fi
 
       - name: Export IPA (template only)
+        if: steps.xcodeproj.outputs.present == 'true'
         working-directory: apps/ios-app
         run: |
           echo "Note: IPA export requires valid code signing credentials"
@@ -87,6 +133,7 @@ jobs:
           name: ios-build-logs
           path: apps/ios-app/build.log
           retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload archive (if built)
         if: always()
@@ -103,14 +150,7 @@ jobs:
           echo "=========================================="
           echo "iOS Build Summary"
           echo "=========================================="
-          echo "✅ Build configuration validated"
-          echo "⚠️  Signing requires manual setup (see README)"
-          echo ""
-          echo "Next steps:"
-          echo "1. Set up Apple Developer certificates"
-          echo "2. Add APPLE_TEAM_ID secret to GitHub"
-          echo "3. Add CODE_SIGN_IDENTITY secret to GitHub"
-          echo "4. Update ExportOptions_AppStore.plist with real provisioning profile"
-          echo ""
-          echo "See apps/ios-app/README.md for detailed instructions"
+          echo "Scaffold validated: Swift sources + plists present and well-formed."
+          echo "The real archive build runs once a .xcodeproj/.xcworkspace is committed"
+          echo "and Apple signing is configured -- see ROADMAP.md Phase 9 + README."
           echo "=========================================="
