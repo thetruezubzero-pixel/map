@@ -1,6 +1,6 @@
 ---
 name: frontend-qa
-description: Use this agent to review changes under apps/web/ for accessibility, Mapbox/react-map-gl correctness, responsive layout, and frontend performance before merging. Trigger it after any React component, store, or map-layer change.
+description: Use this agent to review changes under apps/web/ for accessibility, Leaflet/react-leaflet correctness, responsive layout, and frontend performance before merging. Trigger it after any React component, store, or map-layer change.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -15,10 +15,10 @@ explicitly asked to apply a fix.
   color contrast is reasonable against the dark theme in `src/index.css`,
   keyboard navigation works for map controls and filter panels, no
   `<div onClick>` where a `<button>` belongs.
-- **Mapbox/react-map-gl correctness**: viewport state stays in sync with
-  `useMapStore`, markers/popups clean up on unmount, no missing
-  `VITE_MAPBOX_ACCESS_TOKEN` guard (see `MapView.tsx`'s fallback UI),
-  layer toggles in `useMapStore.layers` actually gate rendering.
+- **Leaflet/react-leaflet correctness**: viewport state stays in sync with
+  `useMapStore`, markers/popups clean up on unmount, GeoJSON layers render
+  with correct styling, layer toggles in `useMapStore.layers` actually gate
+  rendering.
 - **Performance**: no unmemoized expensive recompute in render, no
   unbounded marker/feature lists without clustering, debounced network
   calls stay debounced (see `SearchBar.tsx`'s `useDebounced`).

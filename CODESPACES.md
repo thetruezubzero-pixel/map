@@ -34,13 +34,6 @@ Add these to your GitHub repo's **Settings → Codespaces → Codespaces Secrets
 
 ### Tier 2: Recommended — Core features work without these but fall back to placeholders
 
-#### `VITE_MAPBOX_ACCESS_TOKEN`
-- **What it is**: Free Mapbox account token
-- **Lifetime**: Fixed, set once, done forever (free)
-- **How to get**: Create account at https://account.mapbox.com/access-tokens/
-- **Why it matters**: Without this, the map shows a "set your token" placeholder instead of a real map
-- **Already correct?** No — `.env.example` is empty
-
 #### `HEIRLOOM_DEVICE_KEY`
 - **What it is**: 64-character hex string for encrypting agent weight snapshots (AES-256-GCM)
 - **Lifetime**: Fixed, generated once
@@ -102,13 +95,7 @@ Go to your repo's **Settings → Codespaces → Codespaces Secrets** (or https:/
    - Repository access: This repository only
    - Click "Add secret"
 
-4. **Optionally add `VITE_MAPBOX_ACCESS_TOKEN`**
-   - Create free Mapbox token: https://account.mapbox.com/access-tokens/
-   - Name: `VITE_MAPBOX_ACCESS_TOKEN`
-   - Value: [paste your Mapbox token]
-   - Click "Add secret"
-
-5. **Optionally add `OPENROUTER_API_KEY`**
+4. **Optionally add `OPENROUTER_API_KEY`**
    - Only if you've set up an OpenRouter account with funded credits
    - Name: `OPENROUTER_API_KEY`
    - Value: [paste your OpenRouter API key]

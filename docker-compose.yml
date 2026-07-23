@@ -259,7 +259,6 @@ services:
     build:
       context: ./apps/web
       args:
-        VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
         VITE_GATEWAY_URL: /api
         VITE_PY_API_URL: /py-api
     restart: unless-stopped
