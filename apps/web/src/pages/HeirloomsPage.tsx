@@ -65,14 +65,12 @@ export function HeirloomsPage() {
 
   return (
     <PageShell title="Heirlooms -- cross-device knowledge persistence">
-      <p className="mb-4 max-w-2xl text-sm text-text-muted">
-        Real, working backend: AES-256-GCM-encrypted weight snapshots in Postgres, content-addressed by a sha256
-        hash. The spec's IPFS + blockchain attestation layer is a documented interface stub, not live infrastructure
-        -- see streaming and ROADMAP.md for why (real wallet/key management and gas fees, not something to fake).
+      <p className="mb-4 max-w-2xl text-xs text-text-muted sm:text-sm">
+        Real, working backend: AES-256-GCM-encrypted weight snapshots in Postgres. The spec's IPFS + blockchain layer is a documented stub -- see ROADMAP.md.
       </p>
 
-      <div className="mb-6 flex flex-wrap items-end gap-2">
-        <div>
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:flex-wrap">
+        <div className="flex-1 sm:flex-none">
           <label htmlFor="heirloom-user-id" className="mb-1 block text-xs text-text-muted">
             user_id
           </label>
@@ -81,10 +79,10 @@ export function HeirloomsPage() {
             placeholder="user_id"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
-            className="w-48"
+            className="w-full text-xs sm:w-auto sm:text-sm"
           />
         </div>
-        <div>
+        <div className="flex-1 sm:flex-none">
           <label htmlFor="heirloom-device-id" className="mb-1 block text-xs text-text-muted">
             device_id
           </label>
@@ -93,10 +91,10 @@ export function HeirloomsPage() {
             placeholder="device_id"
             value={deviceId}
             onChange={(e) => setDeviceId(e.target.value)}
-            className="w-40"
+            className="w-full text-xs sm:w-auto sm:text-sm"
           />
         </div>
-        <div>
+        <div className="flex-1 sm:flex-none">
           <label htmlFor="heirloom-agent-select" className="mb-1 block text-xs text-text-muted">
             agent
           </label>
@@ -104,27 +102,27 @@ export function HeirloomsPage() {
             id="heirloom-agent-select"
             value={selectedAgentId}
             onChange={(e) => setSelectedAgentId(e.target.value)}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-text"
+            className="h-9 w-full rounded-md border border-border bg-surface px-2 text-xs text-text sm:w-auto sm:text-sm"
           >
-            <option value="">select an agent…</option>
+            <option value="">select…</option>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.role} / {a.level} ({a.model})
+                {a.role.replace('_', ' ')} ({a.level})
               </option>
             ))}
           </select>
         </div>
-        <Button size="sm" onClick={handleExport}>
-          Export heirloom
+        <Button size="sm" onClick={handleExport} className="text-xs sm:text-sm">
+          Export
         </Button>
       </div>
       {exportError && (
-        <p className="mb-4 text-sm text-red-400" role="alert">
+        <p className="mb-4 text-xs text-red-400 sm:text-sm" role="alert">
           {exportError}
         </p>
       )}
       {error && (
-        <p className="mb-4 text-sm text-red-400" role="alert">
+        <p className="mb-4 text-xs text-red-400 sm:text-sm" role="alert">
           {error}
         </p>
       )}
@@ -138,22 +136,22 @@ export function HeirloomsPage() {
         </div>
 
         <div>
-          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+          <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">
               Transfer log ({visibleHeirlooms.length}
               {visibleHeirlooms.length !== heirlooms.length ? ` of ${heirlooms.length}` : ''})
             </h3>
-            <div className="flex items-end gap-2">
-              <div>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:gap-2">
+              <div className="flex-1 sm:flex-none">
                 <label htmlFor="heirloom-search" className="sr-only">
-                  Filter heirlooms by agent, device, backend, or hash
+                  Filter heirlooms
                 </label>
                 <Input
                   id="heirloom-search"
-                  placeholder="Filter by agent, device, backend…"
+                  placeholder="Filter…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  className="h-8 w-48 text-xs"
+                  className="h-8 w-full text-xs sm:w-auto"
                 />
               </div>
               <div>
@@ -164,32 +162,32 @@ export function HeirloomsPage() {
                   id="heirloom-sort"
                   value={sortKey}
                   onChange={(e) => setSortKey(e.target.value as SortKey)}
-                  className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-text"
+                  className="h-8 w-full rounded-md border border-border bg-surface px-2 text-xs text-text sm:w-auto"
                 >
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="agent">By agent name</option>
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="agent">By agent</option>
                 </select>
               </div>
             </div>
           </div>
-          <div className="max-h-[400px] space-y-2 overflow-y-auto" aria-live="polite">
+          <div className="max-h-[400px] space-y-1.5 overflow-y-auto sm:space-y-2" aria-live="polite">
             {visibleHeirlooms.map((h) => (
-              <div key={h.id} className="rounded-md border border-border bg-surface p-3 text-xs">
-                <div className="mb-1 flex items-center justify-between">
-                  <Link to={`/agents/${h.agent_id}`} className="font-medium text-accent hover:underline">
+              <div key={h.id} className="rounded-md border border-border bg-surface p-2 text-xs sm:p-3">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <Link to={`/agents/${h.agent_id}`} className="font-medium text-accent hover:underline truncate">
                     {h.agent_name}
                   </Link>
-                  <Badge variant={h.verified ? 'success' : 'outline'}>{h.backend}</Badge>
+                  <Badge variant={h.verified ? 'success' : 'outline'} className="text-xs shrink-0">{h.backend}</Badge>
                 </div>
-                <p className="text-text-muted">
-                  device: {h.device_id} · hash: {h.content_hash.slice(0, 16)}… · {new Date(h.created_at).toLocaleString()}
+                <p className="text-text-muted truncate text-xs">
+                  d: {h.device_id.slice(0, 10)} · h: {h.content_hash.slice(0, 8)}… · {new Date(h.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
             ))}
-            {heirlooms.length === 0 && <p className="text-sm text-text-muted">No heirlooms exported yet.</p>}
+            {heirlooms.length === 0 && <p className="text-xs text-text-muted sm:text-sm">No heirlooms exported yet.</p>}
             {heirlooms.length > 0 && visibleHeirlooms.length === 0 && (
-              <p className="text-sm text-text-muted">No heirlooms match "{query}".</p>
+              <p className="text-xs text-text-muted sm:text-sm">No heirlooms match "{query}".</p>
             )}
           </div>
         </div>

@@ -42,32 +42,31 @@ export function TrainingPage() {
 
   return (
     <PageShell title="Amateur training progress">
-      <div className="mb-4 max-w-xs">
-        <Input placeholder="user_id (blank = platform-wide)" value={userId} onChange={(e) => setUserId(e.target.value)} />
+      <div className="mb-4 max-w-full sm:max-w-xs">
+        <Input placeholder="user_id (blank = all)" value={userId} onChange={(e) => setUserId(e.target.value)} className="text-xs sm:text-sm" />
       </div>
-      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-      <p className="mb-4 text-sm text-text-muted">
-        Graduation requires BOTH ≥90% lifetime accuracy AND 50 consecutive successes -- a lucky streak with a poor
-        lifetime record doesn't graduate an agent out of shadow mode.
+      {error && <p className="mb-4 text-xs text-red-400 sm:text-sm">{error}</p>}
+      <p className="mb-4 text-xs text-text-muted sm:text-sm">
+        Graduation requires BOTH ≥90% accuracy AND 50 consecutive successes.
       </p>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:gap-4 md:grid-cols-2">
         {amateurs.map((a) => (
-          <div key={a.id} className="space-y-3 rounded-md border border-border bg-surface p-4">
+          <div key={a.id} className="space-y-2 rounded-md border border-border bg-surface p-2 sm:space-y-3 sm:p-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-text">{a.role.replace('_', ' ')}</span>
-              {a.graduated ? <Badge variant="success">graduated</Badge> : <Badge variant="outline">shadow mode</Badge>}
+              <span className="text-xs font-medium text-text sm:text-sm">{a.role.replace('_', ' ')}</span>
+              {a.graduated ? <Badge variant="success" className="text-xs">grad</Badge> : <Badge variant="outline" className="text-xs">shadow</Badge>}
             </div>
-            <p className="text-xs text-text-muted">{a.model}</p>
+            <p className="text-xs text-text-muted truncate">{a.model.split('/').pop()}</p>
             <ProgressBar
               value={a.total_tasks ? Math.round((a.accuracy ?? 0) * 100) : 0}
               target={Math.round(a.accuracy_needed * 100)}
               label="Accuracy %"
             />
-            <ProgressBar value={a.consecutive_successes} target={a.consecutive_needed} label="Consecutive successes" />
+            <ProgressBar value={a.consecutive_successes} target={a.consecutive_needed} label="Consecutive" />
           </div>
         ))}
-        {amateurs.length === 0 && !error && <p className="text-sm text-text-muted">No amateur agents yet.</p>}
+        {amateurs.length === 0 && !error && <p className="text-xs text-text-muted sm:text-sm">No amateur agents yet.</p>}
       </div>
     </PageShell>
   )

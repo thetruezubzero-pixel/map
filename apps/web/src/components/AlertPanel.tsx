@@ -89,18 +89,19 @@ export function AlertPanel() {
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
           Alerts
         </h3>
-        <p className="mb-2 text-sm text-text-muted">
+        <p className="mb-2 text-xs text-text-muted sm:text-sm">
           No login flow exists yet -- paste a pre-issued JWT (signed with the gateway's JWT_SECRET) to
           connect to real-time alerts.
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
           <Input
             type="password"
             placeholder="JWT"
             value={tokenInput}
             onChange={(e) => setTokenInput(e.target.value)}
+            className="text-xs sm:text-sm"
           />
-          <Button size="sm" onClick={() => setToken(tokenInput.trim() || null)} disabled={!tokenInput.trim()}>
+          <Button size="sm" onClick={() => setToken(tokenInput.trim() || null)} disabled={!tokenInput.trim()} className="text-xs sm:text-sm">
             Connect
           </Button>
         </div>
@@ -161,16 +162,16 @@ export function AlertPanel() {
         </div>
       </div>
 
-      <div className="space-y-2 rounded-md border border-border bg-surface p-3">
+      <div className="space-y-2 rounded-md border border-border bg-surface p-2 sm:p-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">New subscription</p>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {SUBSCRIPTION_TYPES.map((t) => (
             <Button
               key={t}
               size="sm"
               variant={newSubType === t ? 'default' : 'outline'}
               onClick={() => setNewSubType(t)}
-              className="flex-1 px-1 text-[11px]"
+              className="flex-1 px-1 text-xs"
             >
               {t}
             </Button>
@@ -233,7 +234,7 @@ export function AlertPanel() {
             size="sm"
             variant={severityFilter === sev ? 'default' : 'outline'}
             onClick={() => setSeverityFilter(severityFilter === sev ? null : sev)}
-            className="px-2 text-[11px]"
+            className="px-2 text-xs"
           >
             {sev}
           </Button>
@@ -243,7 +244,7 @@ export function AlertPanel() {
             aria-label="Filter alerts by source"
             value={sourceFilter ?? ''}
             onChange={(e) => setSourceFilter(e.target.value || null)}
-            className="h-8 rounded-md border border-border bg-surface px-2 text-[11px] text-text"
+            className="h-8 rounded-md border border-border bg-surface px-2 text-xs text-text"
           >
             <option value="">all sources</option>
             {availableSources.map((s) => (
@@ -255,22 +256,22 @@ export function AlertPanel() {
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {filteredAlerts.length === 0 && (
-          <p className="text-sm text-text-muted">
+          <p className="text-xs text-text-muted sm:text-sm">
             {alerts.length === 0 ? 'No alerts yet -- this feed updates live.' : 'No alerts match the current filters.'}
           </p>
         )}
         {filteredAlerts.map((alert) => (
-          <div key={alert.id} className="rounded-md border border-border bg-surface p-2.5 text-sm">
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <Badge variant={SEVERITY_VARIANT[alert.severity]}>{alert.severity}</Badge>
+          <div key={alert.id} className="rounded-md border border-border bg-surface p-2 text-xs sm:p-2.5 sm:text-sm">
+            <div className="mb-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <Badge variant={SEVERITY_VARIANT[alert.severity]} className="w-fit text-xs">{alert.severity}</Badge>
               <span className="text-xs text-text-muted">
-                {new Date(alert.created_at).toLocaleTimeString()}
+                {new Date(alert.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
-            <p className="font-medium text-text">{alert.title}</p>
-            <p className="text-xs text-text-muted">{alert.description}</p>
+            <p className="font-medium text-text line-clamp-1">{alert.title}</p>
+            <p className="text-xs text-text-muted line-clamp-2">{alert.description}</p>
           </div>
         ))}
       </div>
