@@ -8,6 +8,7 @@ import { EntityDetailPanel } from '@/components/EntityDetailPanel'
 import { AlertPanel } from '@/components/AlertPanel'
 import { SystemHealthPanel } from '@/components/SystemHealthPanel'
 import { DashboardNav } from '@/components/DashboardNav'
+import { AgentCommandBar } from '@/components/AgentCommandBar'
 import { Button } from '@/components/ui/button'
 import { useMapStore } from '@/store/useMapStore'
 import { useAlertStore } from '@/store/useAlertStore'
@@ -139,6 +140,10 @@ function App() {
           >
             <MapView />
           </Suspense>
+          {/* The conversational control: talk to the map, the agent drives
+              it. Overlaid on the map so it's the primary interaction, not
+              another panel to hunt for. */}
+          <AgentCommandBar />
         </main>
 
         <aside

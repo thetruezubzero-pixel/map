@@ -562,9 +562,41 @@ export interface ChatGroundingRecord {
   retrieved_at: string
 }
 
+// A typed instruction the agent emits for the frontend to execute against
+// the map -- the mechanism that lets the agent *operate the map itself*
+// from plain English. Mirrors app/agents/map_intent.py's MapAction (flat
+// optional-field shape on purpose: unknown fields for a given type are
+// ignored, so the backend can add fields without breaking this client).
+export type MapActionType =
+  | 'search'
+  | 'set_viewport'
+  | 'set_base_style'
+  | 'set_filter'
+  | 'show_entity_types'
+  | 'toggle_layer'
+  | 'reset'
+
+export interface MapAction {
+  type: MapActionType
+  q?: string | null
+  near_place?: string | null
+  radius_m?: number | null
+  lat?: number | null
+  lon?: number | null
+  zoom?: number | null
+  entity_type?: string | null
+  source?: string | null
+  date_from?: string | null
+  date_to?: string | null
+  entity_types?: string[] | null
+  base_style?: string | null
+  layer?: string | null
+  enabled?: boolean | null
+}
+
 export function sendChatMessage(
   messages: ChatMessage[],
-): Promise<{ reply: string; grounding: ChatGroundingRecord[] }> {
+): Promise<{ reply: string; grounding: ChatGroundingRecord[]; actions: MapAction[] }> {
   return pyRequest('/chat', {
     method: 'POST',
     body: JSON.stringify({ messages }),
