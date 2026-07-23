@@ -30,6 +30,11 @@ class ChatGroundingRecord(BaseModel):
     source: str
     license: str | None
     retrieved_at: str
+    # Coordinates when the grounded row has geometry -- lets the frontend
+    # plot the entities the agent cites on the map (null for a row with no
+    # geom, which stays chat-only). See chat_agent._search_grounding.
+    lon: float | None = None
+    lat: float | None = None
 
 
 class ChatResponse(BaseModel):

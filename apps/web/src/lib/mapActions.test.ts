@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MapAction, SearchResult } from '@/lib/api'
-import { applyMapActions } from './mapActions'
+import { applyMapActions, plotLocatedRecords, type LocatableRecord } from './mapActions'
 import { useMapStore } from '@/store/useMapStore'
 import { ENTITY_TYPES } from '@/lib/api'
 
@@ -12,10 +12,11 @@ vi.mock('@/lib/api', async (importOriginal) => {
     ...actual,
     geocode: vi.fn(),
     search: vi.fn(),
+    createResearchJob: vi.fn(),
   }
 })
 
-const { geocode, search } = await import('@/lib/api')
+const { geocode, search, createResearchJob } = await import('@/lib/api')
 
 const sampleResult: SearchResult = {
   id: 'e1',
@@ -33,6 +34,7 @@ describe('applyMapActions', () => {
   beforeEach(() => {
     vi.mocked(geocode).mockReset()
     vi.mocked(search).mockReset()
+    vi.mocked(createResearchJob).mockReset()
     useMapStore.getState().resetFilters()
     useMapStore.getState().setResults([])
     useMapStore.getState().setSelectedEntityId(null)
@@ -134,5 +136,63 @@ describe('applyMapActions', () => {
     vi.mocked(search).mockRejectedValue(new Error('boom'))
     const res = await applyMapActions([{ type: 'search', entity_type: 'business' }])
     expect(res.notes.join(' ')).toContain('Search failed')
+  })
+
+  it('research action launches the swarm and returns the job id (Combine B)', async () => {
+    vi.mocked(createResearchJob).mockResolvedValue({ job_id: 'job-123', status: 'queued' })
+    const res = await applyMapActions([{ type: 'research', q: 'Acme Corp' }])
+    expect(createResearchJob).toHaveBeenCalledWith('Acme Corp')
+    expect(res.researchJobId).toBe('job-123')
+  })
+
+  it('research with an empty subject does not launch a job', async () => {
+    const res = await applyMapActions([{ type: 'research', q: '  ' }])
+    expect(createResearchJob).not.toHaveBeenCalled()
+    expect(res.researchJobId).toBeNull()
+    expect(res.notes.join(' ')).toContain('Nothing specified')
+  })
+
+  it('notes when the research launch fails (e.g. rate-limited)', async () => {
+    vi.mocked(createResearchJob).mockRejectedValue(new Error('429'))
+    const res = await applyMapActions([{ type: 'research', q: 'Acme' }])
+    expect(res.researchJobId).toBeNull()
+    expect(res.notes.join(' ').toLowerCase()).toContain('rate-limited')
+  })
+})
+
+describe('plotLocatedRecords (Combine A/B)', () => {
+  beforeEach(() => {
+    useMapStore.getState().setResults([])
+    useMapStore.getState().setSelectedEntityId(null)
+    useMapStore.getState().setVisibleEntityTypes(new Set(ENTITY_TYPES))
+  })
+
+  const located: LocatableRecord = {
+    id: 'g1', name: 'Grounded Co', entity_type: 'business', source: 'opencorporates', lon: -97.7, lat: 30.3,
+  }
+  const coordless: LocatableRecord = {
+    id: 'g2', name: 'No Geo Co', entity_type: 'business', source: 'sec_edgar', lon: null, lat: null,
+  }
+
+  it('plots only records that carry coordinates', () => {
+    const n = plotLocatedRecords([located, coordless], 'grounding')
+    expect(n).toBe(1)
+    const results = useMapStore.getState().results
+    expect(results).toHaveLength(1)
+    expect(results[0].name).toBe('Grounded Co')
+    expect(results[0].id).toBe('g1')
+  })
+
+  it('synthesizes ids for records that lack one', () => {
+    const noId: LocatableRecord = { name: 'Report Row', entity_type: 'location', source: 'osm', lon: 1, lat: 2 }
+    plotLocatedRecords([noId], 'research:job-9')
+    expect(useMapStore.getState().results[0].id).toBe('research:job-9:0')
+  })
+
+  it('returns 0 and leaves results untouched when nothing has coordinates', () => {
+    useMapStore.getState().setResults([{ ...located, id: 'existing' } as SearchResult])
+    const n = plotLocatedRecords([coordless], 'grounding')
+    expect(n).toBe(0)
+    expect(useMapStore.getState().results[0].id).toBe('existing') // unchanged
   })
 })

@@ -535,10 +535,30 @@ itself.
   parser + one case in `applyMapActions`. This is the seam every later
   "idea" (richer entity-graph connectivity, clustering, new record layers)
   plugs into so it becomes something the agent *does*, not another panel.
-- **Not built (deliberate next steps)**: real inter-agent deliberation for
-  disagreement cases (see the async-cooking-giraffe plan), routing chat
-  intents into the full multi-agent `POST /research` pipeline (vs. the
-  quick grounded reply), and marker clustering for large result sets
+- **Built (combining the conversational layer with the research swarm)**:
+  - *Grounding on the map (Combine A)*: `chat_agent._search_grounding` now
+    selects `ST_X/ST_Y(geom)` and `ChatGroundingRecord` carries `lon/lat`,
+    so the entities the chat agent cites are plotted on the map
+    (`plotLocatedRecords`) when a turn didn't otherwise populate it. The
+    conversational agent and the map now draw from the same
+    `research_entities` rows.
+  - *Research hand-off (Combine B)*: a new `research` `MapAction` + parser
+    trigger ("research/investigate/dig into/deep dive on X") launches the
+    full `POST /research` swarm from the command bar; `AgentCommandBar`
+    polls the job and plots its located records + surfaces the summary when
+    it lands. Scope is still enforced by the swarm's `query_analyzer`
+    (empty plan for out-of-scope), and human review is unchanged -- a
+    finished job sits in `awaiting_review`; the map only *displays* it,
+    never auto-finalizes. Reuses the already-rate-limited create path.
+  - The `chat_agent` system prompt now knows it's wired to the map (speaks
+    as "I've put these on the map / I'm running a full research job on X").
+- **Not built (deliberate next steps)**: *persisting live research results
+  into `research_entities`* via `upsert_entities` (Combine C) so a job's
+  findings become permanently searchable like DAG-ingested data -- this
+  touches the DB write path and the `(source, entity_type, name)`
+  idempotency guardrail, so it's a separate, deliberate change; real
+  inter-agent deliberation for disagreement cases (see the
+  async-cooking-giraffe plan); and marker clustering for large result sets
   (`EntityGraphView` tick-throttling caveat in Phase 3 applies to any
   "whole graph" view).
 

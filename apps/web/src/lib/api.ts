@@ -113,6 +113,37 @@ export function createResearchJob(query: string, token?: string): Promise<{ job_
   })
 }
 
+export interface ResearchReportRecord {
+  name: string
+  entity_type: EntityType
+  source: string
+  license: string | null
+  retrieved_at: string
+  url?: string | null
+  lat?: number | null
+  lon?: number | null
+  metadata?: Record<string, unknown>
+}
+
+export interface ResearchJobDetail {
+  job_id: string
+  status: string
+  query: string
+  requested_by: string | null
+  result: { summary: string; records: ResearchReportRecord[] } | null
+  error: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Poll target for a research job launched via the command bar's "research
+// X" intent (Combine B). Read-only, cheap PK lookup (see research.py). Goes
+// through /py-api/ (nginx -> python-api): the gateway only proxies POST
+// /research (create), not the GET-by-id read path.
+export function getResearchJob(jobId: string): Promise<ResearchJobDetail> {
+  return pyRequest<ResearchJobDetail>(`/research/${jobId}`)
+}
+
 // --- Entity graph (business parent/subsidiary + resolved-duplicate edges) ---
 
 export interface GraphNode {
@@ -560,6 +591,10 @@ export interface ChatGroundingRecord {
   source: string
   license: string | null
   retrieved_at: string
+  // Present when the grounded row has geometry -- lets the frontend plot
+  // the entities the agent cites (Combine A). Null for chat-only rows.
+  lon?: number | null
+  lat?: number | null
 }
 
 // A typed instruction the agent emits for the frontend to execute against
@@ -575,6 +610,7 @@ export type MapActionType =
   | 'show_entity_types'
   | 'toggle_layer'
   | 'reset'
+  | 'research'
 
 export interface MapAction {
   type: MapActionType

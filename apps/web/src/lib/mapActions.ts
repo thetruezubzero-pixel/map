@@ -1,10 +1,12 @@
 import {
+  createResearchJob,
   ENTITY_TYPES,
   geocode,
   search,
   type EntityType,
   type MapAction,
   type SearchParams,
+  type SearchResult,
 } from '@/lib/api'
 import { BASE_STYLES, useMapStore, type BaseStyle, type Filters } from '@/store/useMapStore'
 
@@ -49,6 +51,53 @@ export interface ApplyActionsResult {
   notes: string[]
   /** Number of search results the actions produced, if a search ran. */
   resultCount: number | null
+  /** Job id if a `research` action launched the full swarm (Combine B),
+   * so the caller can poll it to completion. Null otherwise. */
+  researchJobId: string | null
+}
+
+// A record carrying optional coordinates -- both chat grounding records and
+// research-report records share this shape, so one plotter serves both.
+export interface LocatableRecord {
+  id?: string
+  name: string
+  entity_type: EntityType
+  source: string
+  license?: string | null
+  lon?: number | null
+  lat?: number | null
+  retrieved_at?: string
+}
+
+/**
+ * Plot records that carry coordinates onto the map (Combine A/B). Records
+ * without lon/lat are skipped -- they stay chat/report-only. Returns the
+ * number actually plotted. `idPrefix` synthesizes stable keys for records
+ * that have no id of their own (e.g. research-report records).
+ */
+export function plotLocatedRecords(records: LocatableRecord[], idPrefix: string): number {
+  const store = useMapStore.getState()
+  const located: SearchResult[] = records
+    .filter((r) => r.lon != null && r.lat != null)
+    .map((r, i) => ({
+      id: r.id ?? `${idPrefix}:${i}`,
+      name: r.name,
+      entity_type: r.entity_type,
+      source: r.source,
+      license: r.license ?? null,
+      lon: r.lon as number,
+      lat: r.lat as number,
+      distance_m: null,
+      retrieved_at: r.retrieved_at ?? new Date().toISOString(),
+    }))
+  if (located.length === 0) return 0
+  store.setResults(located)
+  // Make sure the plotted types are actually visible.
+  const visible = new Set(store.visibleEntityTypes)
+  for (const r of located) visible.add(r.entity_type)
+  store.setVisibleEntityTypes(visible)
+  if (located[0]) store.setSelectedEntityId(located[0].id)
+  return located.length
 }
 
 /** Resolve a place name to coordinates via the gateway's Nominatim proxy.
@@ -75,6 +124,7 @@ export async function applyMapActions(actions: MapAction[]): Promise<ApplyAction
   const store = useMapStore.getState()
   const notes: string[] = []
   let resultCount: number | null = null
+  let researchJobId: string | null = null
 
   // Non-search actions apply immediately, in order.
   let pendingSearch: MapAction | null = null
@@ -128,6 +178,25 @@ export async function applyMapActions(actions: MapAction[]): Promise<ApplyAction
         pendingSearch = action // run last, once
         break
       }
+      case 'research': {
+        // Hand off to the full multi-agent swarm (POST /research). We only
+        // launch it here; the caller polls the returned job id, since the
+        // job runs asynchronously and is human-review-gated (never
+        // auto-finalized -- see orchestrator.run_research_job).
+        const subject = (action.q ?? '').trim()
+        if (!subject) {
+          notes.push('Nothing specified to research.')
+          break
+        }
+        try {
+          const job = await createResearchJob(subject)
+          researchJobId = job.job_id
+        } catch (err) {
+          notes.push('Could not start the research job (it may be rate-limited). Try again shortly.')
+          console.error('research launch failed', err)
+        }
+        break
+      }
       default:
         break
     }
@@ -137,7 +206,7 @@ export async function applyMapActions(actions: MapAction[]): Promise<ApplyAction
     resultCount = await runSearch(pendingSearch, notes)
   }
 
-  return { notes, resultCount }
+  return { notes, resultCount, researchJobId }
 }
 
 async function runSearch(action: MapAction, notes: string[]): Promise<number> {

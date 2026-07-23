@@ -134,6 +134,42 @@ def test_no_device_tracking_action_type_exists():
         } for a in actions)
 
 
+def test_research_routes_to_the_swarm_with_subject():
+    for phrase, subject in [
+        ("research Acme Corporation", "acme corporation"),
+        ("investigate Globex", "globex"),
+        ("dig into Wayne Enterprises", "wayne enterprises"),
+        ("deep dive on Tesla", "tesla"),
+        ("run research on Stark Industries", "stark industries"),
+    ]:
+        actions, summary = parse_map_intent(phrase)
+        assert _types(actions) == ["research"], phrase
+        assert actions[0].q == subject, phrase
+        assert summary and "research" in summary.lower()
+
+
+def test_research_takes_precedence_over_plain_search():
+    # "investigate" must run the deep pipeline, not emit an instant search.
+    actions, _ = parse_map_intent("investigate businesses near Austin")
+    assert _types(actions) == ["research"]
+    assert actions[0].type != "search"
+
+
+def test_plain_find_is_not_misrouted_to_research():
+    actions, _ = parse_map_intent("show businesses near Reno")
+    assert "research" not in _types(actions)
+    assert "search" in _types(actions)
+
+
+def test_research_never_bypasses_scope_downstream():
+    # The parser routes person-shaped research to the swarm verbatim; scope
+    # is enforced by the swarm's query_analyzer (empty plan), not here -- but
+    # the action it emits must still never carry a person entity_type.
+    actions, _ = parse_map_intent("investigate John Smith")
+    for a in actions:
+        assert a.entity_type != "person"
+
+
 def test_pure_conversational_message_yields_no_actions():
     actions, summary = parse_map_intent("what can you help me with?")
     assert actions == []

@@ -119,6 +119,12 @@ MapActionType = Literal[
     "show_entity_types",
     "toggle_layer",
     "reset",
+    # Hand off to the full multi-agent research swarm (POST /research:
+    # query_analyzer -> data_retriever -> result_synthesizer). This is the
+    # conversational surface reaching the "last trial" research pipeline --
+    # the deep, multi-source, human-reviewed path, vs. `search`'s instant
+    # index lookup. Carries the subject in `q`.
+    "research",
 ]
 
 
@@ -155,6 +161,14 @@ class MapAction(BaseModel):
 # Phrases that turn a layer/style/filter on vs. off.
 _OFF_WORDS = ("hide", "remove", "turn off", "disable", "clear", "drop", "no ")
 _ON_WORDS = ("show", "add", "turn on", "enable", "display", "overlay", "reveal")
+
+# Deep-research trigger: "research/investigate/dig into/deep dive on/full
+# report on <subject>" -- captures the subject as the rest of the message.
+_RESEARCH_RE = re.compile(
+    r"\b(?:research|investigate|dig into|deep[- ]dive(?:\s+(?:on|into))?|"
+    r"full report on|run research on|look deeply into)\s+(.+)",
+    re.IGNORECASE,
+)
 
 # "near/in/around/at <place>" -- captures the place phrase up to a
 # clause-ending word or punctuation.
@@ -213,7 +227,23 @@ def parse_map_intent(message: str) -> tuple[list[MapAction], str | None]:
         actions.append(MapAction(type="reset"))
         return actions, "Cleared the map filters and results."
 
-    # 2. Base-style switch ("switch to satellite", "dark map").
+    # 2. Deep-research hand-off to the full swarm. Takes precedence over the
+    #    instant `search` below: "investigate Acme" should run the real
+    #    multi-agent pipeline, not just a one-shot index lookup. The subject
+    #    is passed through verbatim; the swarm's query_analyzer is what
+    #    enforces scope (it returns an empty plan for out-of-scope/person
+    #    requests), so this router doesn't second-guess it here.
+    research_match = _RESEARCH_RE.search(text)
+    if research_match:
+        subject = research_match.group(1).strip(" .?!,")
+        # Strip a leading connective the trigger left behind ("dig into X"
+        # already consumed "into"; "deep dive on X" leaves "on"/"into").
+        subject = re.sub(r"^(?:on|into|about|the)\s+", "", subject).strip()
+        if subject:
+            actions.append(MapAction(type="research", q=subject))
+            return actions, f"Starting a full research job on {subject}. This runs the multi-source swarm and is human-reviewed."
+
+    # 3. Base-style switch ("switch to satellite", "dark map").
     for phrase in sorted(_BASE_STYLE_SYNONYMS, key=len, reverse=True):
         if re.search(rf"\b{re.escape(phrase)}\b", text) and re.search(r"\b(map|view|style|satellite|dark|light|topo|terrain|imagery|aerial)\b", text):
             style = _BASE_STYLE_SYNONYMS[phrase]
@@ -221,7 +251,7 @@ def parse_map_intent(message: str) -> tuple[list[MapAction], str | None]:
             summary_parts.append(f"switched the base map to {phrase}")
             break
 
-    # 3. Layer toggles ("show the news heatmap", "hide zoning").
+    # 4. Layer toggles ("show the news heatmap", "hide zoning").
     #    Only fire when a layer word is actually present.
     matched_layers: set[str] = set()
     for phrase, layer_key in _LAYER_SYNONYMS:
@@ -233,14 +263,14 @@ def parse_map_intent(message: str) -> tuple[list[MapAction], str | None]:
             matched_layers.add(layer_key)
             summary_parts.append(f"{'showed' if enabled else 'hid'} the {phrase} layer")
 
-    # 4. "only <type>" / "just <type>" -> restrict visible entity types.
+    # 5. "only <type>" / "just <type>" -> restrict visible entity types.
     if re.search(r"\b(only|just)\b", text):
         types = _find_all_entity_types(text)
         if types:
             actions.append(MapAction(type="show_entity_types", entity_types=types))
             summary_parts.append(f"showing only {', '.join(types)}")
 
-    # 5. Search intent: an explicit find/show verb, a place, or an entity
+    # 6. Search intent: an explicit find/show verb, a place, or an entity
     #    type all imply "populate the map with matching records".
     place_match = _NEAR_RE.search(text)
     near_place = place_match.group(1).strip() if place_match else None
