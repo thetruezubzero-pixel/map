@@ -67,7 +67,18 @@ def fetch_companies(api_token: str, search_terms: list[str]) -> list[dict]:
             except httpx.HTTPError as exc:
                 # A bad/expired key or a rate limit must not crash the whole
                 # producer -- skip this term, keep checking the rest.
-                logger.warning("OpenCorporates search failed for %r, skipping: %s", term, exc)
+                # Redact the token before logging: it's sent as a URL query
+                # param above, and httpx.HTTPStatusError.__str__() includes
+                # the full request URL, so logging the raw exception on a
+                # 401/429 would print the API token in cleartext. Same
+                # active leak already fixed in the DAG twin
+                # (data/pipelines/dags/opencorporates_sync_dag.py); this is
+                # its streaming-producer counterpart.
+                logger.warning(
+                    "OpenCorporates search failed for %r, skipping: %s",
+                    term,
+                    str(exc).replace(api_token, "***") if api_token else str(exc),
+                )
                 continue
 
             for c in resp.json().get("results", {}).get("companies", []):
