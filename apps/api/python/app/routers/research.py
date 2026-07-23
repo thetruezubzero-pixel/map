@@ -114,16 +114,33 @@ async def review_job(job_id: UUID, decision: ReviewDecision) -> dict:
     if decision.decision not in ("confirm", "reject"):
         raise HTTPException(status_code=400, detail="decision must be 'confirm' or 'reject'")
 
-    row = await db.get_research_job(job_id)
+    pool = await db.get_pool()
+
+    # Claim the job atomically instead of a plain SELECT-then-check: a
+    # readiness review found the original version read `status`, checked
+    # it in Python, and only wrote a new status at the very end of this
+    # handler -- two review requests submitted for the same job_id before
+    # either finished both passed the "== awaiting_review" check, both
+    # re-fetched the same NOT reward_applied task_history rows, and both
+    # drove finalize_task for each one. finalize_task now claims each row
+    # atomically too, but this closes the job-status side of the same race
+    # so a duplicate submission gets a clean 409 instead of silently
+    # repeating the review.
+    row = await pool.fetchrow(
+        "UPDATE research_jobs SET status = 'reviewing', updated_at = now() "
+        "WHERE id = $1 AND status = 'awaiting_review' "
+        "RETURNING id, result",
+        job_id,
+    )
     if row is None:
-        raise HTTPException(status_code=404, detail="research job not found")
-    if row["status"] != "awaiting_review":
-        raise HTTPException(status_code=409, detail=f"job is '{row['status']}', not awaiting_review")
+        existing = await db.get_research_job(job_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="research job not found")
+        raise HTTPException(status_code=409, detail=f"job is '{existing['status']}', not awaiting_review")
 
     succeeded = decision.decision == "confirm"
     new_status = "completed" if succeeded else "failed"
 
-    pool = await db.get_pool()
     task_ids = await pool.fetch("SELECT id FROM task_history WHERE job_id = $1 AND NOT reward_applied", job_id)
     rewarded = 0
     for t in task_ids:

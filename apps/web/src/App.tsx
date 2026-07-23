@@ -244,7 +244,14 @@ function App() {
         )}
       </div>
 
-      <footer className="border-t border-border p-3 print:hidden">
+      {/* A readiness review found this left out of the mobile dialog's
+          focus trap -- header/main both get `inert` when the mobile
+          overlay opens, but this footer (containing TimelineScrubber's
+          range input) didn't, so Tab/Shift+Tab from the dialog could
+          still reach and operate a control hidden underneath the
+          backdrop, violating aria-modal semantics the same way the
+          already-fixed header/main leak did. */}
+      <footer inert={mobilePanel !== null} className="border-t border-border p-3 print:hidden">
         <TimelineScrubber />
       </footer>
     </div>

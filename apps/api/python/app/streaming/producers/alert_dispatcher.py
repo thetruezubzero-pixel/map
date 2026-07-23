@@ -157,7 +157,11 @@ async def dispatch_pattern(pool: asyncpg.Pool, producer: EventProducer, pattern:
         dispatched += 1
 
     if dispatched:
-        producer.flush()
+        # Blocking network I/O (waits for broker acks) -- must not run
+        # directly on this service's single event loop, same bug class as
+        # every other blocking call already fixed in this repo (see
+        # CLAUDE.md's asyncio.to_thread guardrail entry).
+        await asyncio.to_thread(producer.flush)
     return dispatched
 
 
@@ -179,6 +183,14 @@ async def run_forever() -> None:
             n = await dispatch_pattern(pool, producer, pattern)
             if n:
                 logger.info("dispatched %d alert(s) for pattern %s", n, pattern.get("pattern_id"))
+            # Commit only after dispatch_pattern has actually finished
+            # (its user_alerts INSERTs + Kafka publish both succeeded) --
+            # see make_avro_consumer's enable.auto.commit=False comment. A
+            # crash before this line just redelivers the same message on
+            # restart (a possible duplicate alert, not a silently dropped
+            # one); the asyncio.to_thread wrap is the same
+            # blocking-network-call fix applied to producer.flush() above.
+            await asyncio.to_thread(consumer.commit, message=msg, asynchronous=False)
     finally:
         consumer.close()
         await pool.close()

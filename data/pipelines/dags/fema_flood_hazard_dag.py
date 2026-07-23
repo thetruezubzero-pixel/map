@@ -58,19 +58,32 @@ def fema_flood_hazard_dag():
         records: list[dict] = []
         with httpx.Client(timeout=20.0) as client:
             for name, lat, lon in points:
-                resp = client.get(
-                    NFHL_QUERY_URL,
-                    params={
-                        "geometry": f"{lon},{lat}",
-                        "geometryType": "esriGeometryPoint",
-                        "inSR": 4326,
-                        "spatialRel": "esriSpatialRelIntersects",
-                        "outFields": "FLD_ZONE,ZONE_SUBTY",
-                        "f": "json",
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
+                # A readiness review found this per-point call had no
+                # try/except -- a single transient NFHL failure (5xx, or a
+                # malformed non-JSON body) crashed the whole task,
+                # discarding every other point's records. Fail soft per
+                # point instead.
+                try:
+                    resp = client.get(
+                        NFHL_QUERY_URL,
+                        params={
+                            "geometry": f"{lon},{lat}",
+                            "geometryType": "esriGeometryPoint",
+                            "inSR": 4326,
+                            "spatialRel": "esriSpatialRelIntersects",
+                            "outFields": "FLD_ZONE,ZONE_SUBTY",
+                            "f": "json",
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                except (httpx.HTTPError, ValueError) as exc:
+                    import logging
+
+                    logging.getLogger("airflow.task").warning(
+                        "fema_flood_hazard: point %r failed, skipping: %s", name, exc
+                    )
+                    continue
                 features = data.get("features") or []
                 if not features:
                     continue

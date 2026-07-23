@@ -321,11 +321,19 @@ async def build_project_snapshot(pool) -> dict:
 
     snapshot: dict = {"db": await _db_counts(pool), "swarm_health": await _swarm_health(pool)}
 
-    roadmap = _read_roadmap(project_root)
+    # A readiness review found these two ran as plain synchronous
+    # filesystem I/O directly inside this async def -- the same bug class
+    # already fixed for _recent_git_log/_read_full_source_tree in this
+    # same file (see their docstrings), just missed here. Each call is
+    # small (one file read, one directory glob) but this service is a
+    # single uvicorn worker, so any blocking call anywhere freezes every
+    # concurrent request for its duration -- no "too small to matter"
+    # exception to that.
+    roadmap = await asyncio.to_thread(_read_roadmap, project_root)
     if roadmap is not None:
         snapshot["roadmap"] = roadmap
 
-    dags = _read_dag_inventory(project_root)
+    dags = await asyncio.to_thread(_read_dag_inventory, project_root)
     if dags:
         snapshot["dags"] = dags
 

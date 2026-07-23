@@ -45,17 +45,42 @@ patterns=(
   # Now matches the keyword anywhere in the variable name, not just as
   # an exact prefix.
   '[A-Za-z0-9_]*(api[_-]?key|secret|token|password)[A-Za-z0-9_]*["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_/+-]{16,}'
-  '://[^/[:space:]:]+:[^/[:space:]@]+@'
+  # Widened to also capture the host after `@`: the per-value exclusion
+  # below only sees the matched substring, so it needs the hostname
+  # visible to recognize a legitimate `aether:aether@postgres` local
+  # placeholder (without it, the exclusion's host alternation could never
+  # match and a real credential-in-URL to a local host would be wrongly
+  # flagged, or vice-versa).
+  '://[^/[:space:]:]+:[^/[:space:]@]+@[^/[:space:]:]+'
 )
+
+# Local-only dev defaults (localhost/compose-service hosts, the
+# aether:aether/airflow:airflow placeholder creds used throughout
+# .env.example and docker-compose.yml) aren't a leak risk.
+placeholder_re='your-|change-me|dev-only|example\.com|placeholder|\$\{|<[a-z-]+>|://(aether|airflow):(aether|airflow)@(localhost|postgres|airflow-postgres)'
 
 hits=""
 for p in "${patterns[@]}"; do
-  # Local-only dev defaults (localhost/compose-service hosts, the
-  # aether:aether/airflow:airflow placeholder creds used throughout
-  # .env.example and docker-compose.yml) aren't a leak risk -- exclude
-  # them so this doesn't trip on every doc/config change that mentions
-  # the standard local DATABASE_URL.
-  m=$(echo "$diff_content" | grep -inE -e "$p" | grep -viE 'your-|change-me|dev-only|example\.com|placeholder|\$\{|<[a-z-]+>|://(aether|airflow):(aether|airflow)@(localhost|postgres|airflow-postgres)' || true)
+  matches=$(echo "$diff_content" | grep -inE -e "$p" || true)
+  [ -z "$matches" ] && continue
+
+  # Exclude per-MATCHED-VALUE, not per-line: a security review found the
+  # original whole-line `grep -viE` excluded a real secret whenever a
+  # placeholder token happened to appear anywhere else on the same line
+  # (e.g. a real AWS key with a trailing `# see example.com` comment was
+  # silently allowed). Extract just the matched substring and test only
+  # that against the placeholder list.
+  m=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    value=$(echo "$line" | grep -oiE -e "$p" | tail -1)
+    if echo "$value" | grep -qiE "$placeholder_re"; then
+      continue
+    fi
+    m="$m
+$line"
+  done <<< "$matches"
+
   if [ -n "$m" ]; then
     hits="$hits
 [pattern: $p]

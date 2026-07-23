@@ -34,6 +34,24 @@ def scrub_pii(text: str | None) -> str | None:
     return text
 
 
+def _scrub_value(value):
+    if isinstance(value, str):
+        return scrub_pii(value)
+    if isinstance(value, dict):
+        return {k: _scrub_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub_value(v) for v in value]
+    return value
+
+
 def scrub_record(record: dict) -> dict:
-    """Applies scrub_pii to every string value in a flat record dict."""
-    return {k: (scrub_pii(v) if isinstance(v, str) else v) for k, v in record.items()}
+    """Applies scrub_pii to every string value in the record, recursing
+    into nested dicts/lists -- a readiness review found the original
+    version only scrubbed top-level string values, so any DAG that puts
+    real free text into `metadata` (e.g. data_gov_search_dag.py's CKAN
+    `notes` field is real free-text dataset description, a realistic place
+    for a maintainer's contact email/phone to appear) bypassed this
+    scrubber entirely. Confirmed live: scrub_record({"metadata": {"notes":
+    "contact jane@x.gov"}}) used to return the email unredacted; now
+    recurses and redacts it."""
+    return {k: _scrub_value(v) for k, v in record.items()}

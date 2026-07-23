@@ -119,7 +119,8 @@ def fcc_spectrum_licensing_dag():
                             },
                         )
                         resp.raise_for_status()
-                    except httpx.HTTPError as exc:
+                        page = resp.json()
+                    except (httpx.HTTPError, ValueError) as exc:
                         # A readiness review found a single transient
                         # 5xx/429 mid-pagination discarded every
                         # already-accumulated record, not just this
@@ -127,6 +128,11 @@ def fcc_spectrum_licensing_dag():
                         # matching opencorporates_sync_dag.py/
                         # data_gov_search_dag.py's established pattern for
                         # this exact class of flaky-external-API failure.
+                        # resp.json() is inside the try too: a malformed
+                        # (non-JSON) body raises ValueError
+                        # (json.JSONDecodeError subclasses it) and would
+                        # otherwise crash the task the same way, discarding
+                        # every already-accumulated record.
                         import logging
 
                         logging.getLogger("airflow.task").warning(
@@ -134,7 +140,6 @@ def fcc_spectrum_licensing_dag():
                             source_slug, offset, exc,
                         )
                         break
-                    page = resp.json()
                     if not page:
                         break
 

@@ -251,7 +251,17 @@ async def sync_project_plan_doc(
             await _run_git(project_root, "checkout", "-B", branch_name, "origin/main")
             await _log_action(pool, plan_id, 0, "branch_created", branch_name=branch_name)
 
-            (project_root / PLAN_DOC_FILENAME).write_text(_render_plan_doc(plan, snapshot_summary), encoding="utf-8")
+            # A readiness review found this ran as plain synchronous file
+            # I/O directly on the event loop while holding
+            # GIT_WORKING_TREE_LOCK -- same bug class as every git
+            # subprocess call in this function, just a file write, and
+            # just as capable of freezing every concurrent request on this
+            # single-worker service for its duration.
+            await asyncio.to_thread(
+                (project_root / PLAN_DOC_FILENAME).write_text,
+                _render_plan_doc(plan, snapshot_summary),
+                encoding="utf-8",
+            )
             await _run_git(project_root, "add", PLAN_DOC_FILENAME)
             await _run_git(
                 project_root,

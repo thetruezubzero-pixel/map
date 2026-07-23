@@ -52,10 +52,26 @@ pub async fn ws_alerts(
     ws: WebSocketUpgrade,
 ) -> Result<Response, crate::error::AppError> {
     let user_id = require_user_id_from_query(query.token.as_deref(), &state.config.jwt_secret)?;
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, state, user_id)))
+
+    // Cap total concurrent /ws/alerts connections process-wide: each one
+    // holds a dedicated PgListener connection for its whole lifetime, so
+    // without this a single valid JWT could open enough to exhaust
+    // Postgres connection slots. The permit is moved into handle_socket
+    // and released automatically when the connection ends (Drop).
+    let Ok(permit) = state.ws_alerts_semaphore.clone().try_acquire_owned() else {
+        return Err(crate::error::AppError::ServiceUnavailable(
+            "alert stream at capacity -- try again shortly".to_string(),
+        ));
+    };
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, state, user_id, permit)))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: AppState, user_id: String) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    state: AppState,
+    user_id: String,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+) {
     // `PgListener::connect_with(&state.db)` would pull a real connection out
     // of the shared pool (max_connections=10) and hold it for this socket's
     // entire lifetime -- confirmed live that ~10 concurrent WS connections

@@ -89,7 +89,7 @@ async def get_agent(agent_id: UUID, task_limit: int = 20) -> AgentDetail:
         ORDER BY created_at DESC LIMIT $2
         """,
         agent_id,
-        min(task_limit, 100),
+        max(1, min(task_limit, 100)),
     )
     trajectory = await pool.fetch(
         "SELECT weight, delta, reason, created_at FROM weight_history WHERE agent_id = $1 ORDER BY created_at",
@@ -140,7 +140,7 @@ async def swarm_activity(limit: int = 50, job_id: UUID | None = None) -> dict:
             FROM task_history WHERE job_id = $1 ORDER BY created_at DESC LIMIT $2
             """,
             job_id,
-            min(limit, 200),
+            max(1, min(limit, 200)),
         )
     else:
         rows = await pool.fetch(
@@ -149,7 +149,7 @@ async def swarm_activity(limit: int = 50, job_id: UUID | None = None) -> dict:
                    winning_agent_id, reward_applied, created_at
             FROM task_history ORDER BY created_at DESC LIMIT $1
             """,
-            min(limit, 200),
+            max(1, min(limit, 200)),
         )
     return {"tasks": [shape_task_row(r) for r in rows]}
 

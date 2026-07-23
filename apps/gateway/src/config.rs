@@ -21,6 +21,15 @@ pub struct Config {
     // could otherwise hold a request open indefinitely.
     pub http_client_timeout_secs: u64,
     pub request_timeout_secs: u64,
+    // Total concurrent /ws/alerts connections allowed process-wide. Each
+    // one holds a dedicated PgListener connection for its whole lifetime
+    // (routes/alerts_ws.rs), so without a cap a single legit JWT could
+    // open enough of them to exhaust Postgres connection slots -- a
+    // readiness review flagged this as the remaining half of the
+    // /ws/alerts resource-exhaustion story (the PgListener-not-from-pool
+    // fix addressed pool starvation; this bounds the dedicated
+    // connections). Same NonZero-style guard as the timeouts above.
+    pub ws_alerts_max_connections: usize,
     pub kafka_bootstrap_servers: String,
     pub schema_registry_url: String,
     pub ksqldb_url: String,
@@ -127,6 +136,11 @@ impl Config {
                 .and_then(|v| v.parse::<u64>().ok())
                 .filter(|&v| v > 0)
                 .unwrap_or(30),
+            ws_alerts_max_connections: env::var("WS_ALERTS_MAX_CONNECTIONS")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&v| v > 0)
+                .unwrap_or(50),
         }
     }
 }

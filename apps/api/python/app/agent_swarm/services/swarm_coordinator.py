@@ -540,17 +540,43 @@ async def finalize_task(pool, task_id: UUID, *, succeeded: bool, ground_truth: d
     credit_assigner rewards, marks the task as settled so a retry can't
     double-apply them, and -- if this leaves the role's (role, user_id)
     roster with zero amateurs -- spawns one replacement trainee (see
-    _maybe_spawn_amateur). Returns the number of agents rewarded."""
+    _maybe_spawn_amateur). Returns the number of agents rewarded.
+
+    Claims the task with a single atomic conditional UPDATE (`... WHERE
+    NOT reward_applied RETURNING ...`) before doing anything else,
+    instead of a separate SELECT-then-later-UPDATE -- a readiness review
+    found the original version read reward_applied, then only set it back
+    to true *after* applying rewards, so two concurrent finalize_task
+    calls for the same task_id (e.g. POST /research/{job_id}/review
+    submitted twice before the first request finishes) could both observe
+    reward_applied=false and both call apply_rewards, double-crediting the
+    winning agent's weight. A `SELECT ... FOR UPDATE` held across the
+    nested apply_rewards() call would self-deadlock instead -- apply_rewards
+    acquires its own pool connection and its `INSERT INTO weight_history`
+    has an FK back to this task_history row, so that INSERT blocks on the
+    outer connection's uncommitted lock, which only releases once
+    apply_rewards returns: two connections each waiting on the other,
+    invisible to Postgres's deadlock detector, confirmed hanging in a real
+    concurrent test. Claiming with one atomic UPDATE up front makes
+    double-application impossible (Postgres serializes the two UPDATEs on
+    the same row; the loser's WHERE re-evaluates to false) without holding
+    any lock across apply_rewards."""
     import json as _json
 
     from app.agent_swarm.models.consensus_vote import Vote as _Vote
     from app.agent_swarm.services.credit_assigner import apply_rewards, compute_rewards
 
     task = await pool.fetchrow(
-        "SELECT role, votes, consensus_output, winning_agent_id, reward_applied FROM task_history WHERE id = $1",
+        """
+        UPDATE task_history
+        SET reward_applied = true, ground_truth = $2
+        WHERE id = $1 AND NOT reward_applied
+        RETURNING role, votes, consensus_output, winning_agent_id
+        """,
         task_id,
+        ground_truth,
     )
-    if task is None or task["reward_applied"]:
+    if task is None:
         return 0
 
     # asyncpg returns JSONB columns as raw JSON text, not pre-parsed --
@@ -572,15 +598,11 @@ async def finalize_task(pool, task_id: UUID, *, succeeded: bool, ground_truth: d
         for v in stored_votes
     ]
     if not votes:
-        await pool.execute("UPDATE task_history SET reward_applied = true, ground_truth = $2 WHERE id = $1", task_id, ground_truth)
         return 0
 
     winning_vote = next((v for v in votes if v.agent_id == task["winning_agent_id"]), votes[0])
     events = compute_rewards(votes, task["winning_agent_id"], winning_vote.output_key, succeeded)
     await apply_rewards(pool, task_id, events)
-    await pool.execute(
-        "UPDATE task_history SET reward_applied = true, ground_truth = $2 WHERE id = $1", task_id, ground_truth
-    )
 
     user_row = await pool.fetchrow("SELECT user_id FROM agent_registry WHERE id = $1", votes[0].agent_id)
     proposal_user_id = user_row["user_id"] if user_row else None

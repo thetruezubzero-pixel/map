@@ -165,7 +165,7 @@ async def list_snapshots(limit: int = 20) -> list[dict]:
     pool = await db.get_pool()
     rows = await pool.fetch(
         "SELECT id, summary, created_at FROM project_snapshots ORDER BY created_at DESC LIMIT $1",
-        min(limit, 100),
+        max(1, min(limit, 100)),
     )
     return [{"id": str(r["id"]), "summary": r["summary"], "created_at": r["created_at"].isoformat()} for r in rows]
 
@@ -179,7 +179,7 @@ async def list_plans(limit: int = 20) -> list[dict]:
         FROM project_plans p JOIN project_snapshots s ON s.id = p.snapshot_id
         ORDER BY p.created_at DESC LIMIT $1
         """,
-        min(limit, 100),
+        max(1, min(limit, 100)),
     )
     return [
         {
@@ -200,11 +200,11 @@ async def list_actions(plan_id: UUID | None = None, limit: int = 50) -> list[dic
         rows = await pool.fetch(
             "SELECT * FROM project_plan_actions WHERE plan_id = $1 ORDER BY created_at DESC LIMIT $2",
             plan_id,
-            min(limit, 200),
+            max(1, min(limit, 200)),
         )
     else:
         rows = await pool.fetch(
-            "SELECT * FROM project_plan_actions ORDER BY created_at DESC LIMIT $1", min(limit, 200)
+            "SELECT * FROM project_plan_actions ORDER BY created_at DESC LIMIT $1", max(1, min(limit, 200))
         )
     return [
         {

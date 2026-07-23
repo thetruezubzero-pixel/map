@@ -77,40 +77,55 @@ def gtfs_transit_dag():
             timeout=60.0, follow_redirects=True, headers={"User-Agent": USER_AGENT}
         ) as client:
             for agency_label, source_slug, feed_url in feeds:
-                resp = client.get(feed_url)
-                resp.raise_for_status()
+                # A readiness review found this per-feed block had no
+                # try/except -- a single transient error (network failure,
+                # or a malformed/non-GTFS zip, or a feed missing stops.txt)
+                # crashed the whole task, discarding every other feed's
+                # stops already collected. KeyError is included because
+                # archive.open("stops.txt") raises it on a malformed feed.
+                try:
+                    resp = client.get(feed_url)
+                    resp.raise_for_status()
+                    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+                        with archive.open("stops.txt") as stops_file:
+                            reader = csv.DictReader(io.TextIOWrapper(stops_file, encoding="utf-8-sig"))
+                            rows = list(reader)
+                except (httpx.HTTPError, zipfile.BadZipFile, KeyError) as exc:
+                    import logging
 
-                with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
-                    with archive.open("stops.txt") as stops_file:
-                        reader = csv.DictReader(io.TextIOWrapper(stops_file, encoding="utf-8-sig"))
-                        for row in reader:
-                            stop_id = row.get("stop_id")
-                            stop_name = row.get("stop_name")
-                            try:
-                                lat = float(row.get("stop_lat", ""))
-                                lon = float(row.get("stop_lon", ""))
-                            except (TypeError, ValueError):
-                                continue
-                            if not stop_id or not stop_name:
-                                continue
+                    logging.getLogger("airflow.task").warning(
+                        "gtfs_transit_sync: feed %r failed, skipping: %s", agency_label, exc
+                    )
+                    continue
 
-                            records.append(
-                                scrub_record(
-                                    {
-                                        "name": f"{stop_name} ({agency_label})",
-                                        "entity_type": "poi",
-                                        "source": source_slug,
-                                        "license": "GTFS static feed -- published by agency for public use",
-                                        "lat": lat,
-                                        "lon": lon,
-                                        "metadata": {
-                                            "stop_id": stop_id,
-                                            "agency": agency_label,
-                                            "retrieved_at": datetime.utcnow().isoformat(),
-                                        },
-                                    }
-                                )
-                            )
+                for row in rows:
+                    stop_id = row.get("stop_id")
+                    stop_name = row.get("stop_name")
+                    try:
+                        lat = float(row.get("stop_lat", ""))
+                        lon = float(row.get("stop_lon", ""))
+                    except (TypeError, ValueError):
+                        continue
+                    if not stop_id or not stop_name:
+                        continue
+
+                    records.append(
+                        scrub_record(
+                            {
+                                "name": f"{stop_name} ({agency_label})",
+                                "entity_type": "poi",
+                                "source": source_slug,
+                                "license": "GTFS static feed -- published by agency for public use",
+                                "lat": lat,
+                                "lon": lon,
+                                "metadata": {
+                                    "stop_id": stop_id,
+                                    "agency": agency_label,
+                                    "retrieved_at": datetime.utcnow().isoformat(),
+                                },
+                            }
+                        )
+                    )
         return records
 
     @task

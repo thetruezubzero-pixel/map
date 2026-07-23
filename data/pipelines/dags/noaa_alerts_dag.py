@@ -63,9 +63,22 @@ def noaa_alerts_dag():
         records: list[dict] = []
         with httpx.Client(timeout=15.0, headers={"User-Agent": USER_AGENT}) as client:
             for name, lat, lon in points:
-                resp = client.get(ALERTS_URL, params={"point": f"{lat},{lon}"})
-                resp.raise_for_status()
-                data = resp.json()
+                # A readiness review found this per-point call had no
+                # try/except -- a single transient NWS failure (5xx, or a
+                # malformed non-JSON body) crashed the whole task,
+                # discarding every other point's alerts. Fail soft per
+                # point instead.
+                try:
+                    resp = client.get(ALERTS_URL, params={"point": f"{lat},{lon}"})
+                    resp.raise_for_status()
+                    data = resp.json()
+                except (httpx.HTTPError, ValueError) as exc:
+                    import logging
+
+                    logging.getLogger("airflow.task").warning(
+                        "noaa_alerts: point %r failed, skipping: %s", name, exc
+                    )
+                    continue
 
                 for feature in data.get("features", []):
                     props = feature.get("properties", {})

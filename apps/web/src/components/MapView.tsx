@@ -65,11 +65,43 @@ export function MapView() {
   const [censusTractData, setCensusTractData] = useState<FeatureCollection | null>(null)
   const [zoningData, setZoningData] = useState<FeatureCollection | null>(null)
   const mapRef = useRef<MapRef>(null)
+  // Tracks the last viewport the map itself reported (via onMoveEnd), so
+  // the external-change effect below can tell an external setViewport
+  // (e.g. a SearchBar geocode-suggestion click) apart from the map's own
+  // move and avoid a feedback loop. See the effect for the full story.
+  const lastMapReportedViewport = useRef(viewport)
   // fetchBoundaryLayer is called both from the toggle-effect and from
   // onMoveEnd, so a quick pan/toggle sequence can have two in-flight
   // requests for the same layer in flight at once -- this guards against
   // an older bbox's response landing after a newer one and clobbering it.
   const boundaryRequestIds = useRef<Record<BoundaryType, number>>({ census_tract: 0, zoning: 0 })
+
+  // `initialViewState` (below) is read only once at mount -- react-map-gl
+  // merges live camera transform with its controlled props on every
+  // update, never re-reading initialViewState -- so a later setViewport
+  // (SearchBar's geocode-suggestion click, an entity-focus action) was
+  // silently ignored and the map never panned. A readiness review
+  // confirmed this by tracing the library's _updateViewState. Drive the
+  // camera imperatively instead: fly to the new viewport, but only when
+  // the change came from *outside* the map. The ref comparison skips the
+  // echo of the map's own onMoveEnd (which also calls setViewport),
+  // preventing an update feedback loop.
+  useEffect(() => {
+    const last = lastMapReportedViewport.current
+    if (
+      last.longitude === viewport.longitude &&
+      last.latitude === viewport.latitude &&
+      last.zoom === viewport.zoom
+    ) {
+      return // this change is the map's own onMoveEnd echo -- already there
+    }
+    lastMapReportedViewport.current = viewport
+    mapRef.current?.flyTo({
+      center: [viewport.longitude, viewport.latitude],
+      zoom: viewport.zoom,
+      duration: 1000,
+    })
+  }, [viewport])
 
   const geolocatedAlerts = useMemo(
     () => alerts.filter((a) => a.lat != null && a.lon != null),
@@ -209,11 +241,16 @@ export function MapView() {
       mapboxAccessToken={MAPBOX_TOKEN}
       initialViewState={viewport}
       onMoveEnd={(evt) => {
-        setViewport({
+        const next = {
           longitude: evt.viewState.longitude,
           latitude: evt.viewState.latitude,
           zoom: evt.viewState.zoom,
-        })
+        }
+        // Record what the map reported before pushing it to the store, so
+        // the external-change effect recognizes the resulting viewport
+        // update as its own echo and doesn't fly the camera back.
+        lastMapReportedViewport.current = next
+        setViewport(next)
         if (layers.censusTracts) fetchBoundaryLayer('census_tract', setCensusTractData)
         if (layers.zoningDistricts) fetchBoundaryLayer('zoning', setZoningData)
       }}
