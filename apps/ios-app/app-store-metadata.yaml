@@ -1,0 +1,115 @@
+# App Store Connect Metadata for Aether Sovereign OS
+
+app_name: "Aether Sovereign OS"
+subtitle: "Public Records Research Platform"
+bundle_id: "com.aethersovereign.map"
+version: "1.0.0"
+build_number: "1"
+
+# App Details
+category: "Business"
+primary_language: "en-US"
+rating_config:
+  alcohol_tobacco: false
+  gambling: false
+  medical: false
+  unrestricted_web_access: false
+  Kids_category: false
+
+# Description (max 170 characters for subtitle, 4000 for description)
+subtitle_short: "Research businesses, properties & public records"
+description: |
+  Aether Sovereign OS is a research platform for public business, property, and
+  location records — built for due diligence, journalism, and urban planning.
+
+  ## Features
+  - **Entity Search**: Search across OpenStreetMap, SEC EDGAR, OpenCorporates,
+    Census data, and more
+  - **Live Mapping**: Interactive map with layers for businesses, properties,
+    news, and boundaries
+  - **Multi-Agent Research**: AI-powered research pipeline with consensus voting
+    and credit assignment
+  - **Real-Time Alerts**: WebSocket-based live alert subscriptions by entity,
+    keyword, or geofence
+  - **Entity Resolution**: Intelligent deduplication and relationship mapping
+  - **Entity Graphs**: Visualize parent/subsidiary relationships and entity networks
+
+  ## Data Sources (All Public, Licensed)
+  - OpenStreetMap (ODbL)
+  - SEC EDGAR (Public Domain)
+  - OpenCorporates (CC-BY)
+  - NewsAPI / GDELT (CC-BY-NC)
+  - Census TIGER (Public Domain)
+  - USGS (Public Domain)
+  - FCC License Records (Public Domain)
+  - Zoning & Property Boundaries (Various)
+
+  ## Scope
+  This app researches PUBLIC records only:
+  ✓ Businesses and corporate filings
+  ✓ Properties and locations
+  ✓ Government records
+  ✓ News and public data
+
+  ✗ No personal data collection
+  ✗ No device tracking
+  ✗ No individual dossiers
+
+  ## Privacy & Security
+  - JWT-based authentication
+  - All API calls encrypted in transit (TLS)
+  - No personal information stored on device
+  - Location used only for map context (not tracked)
+  - Read-only access to research data
+
+  For detailed information, see: https://github.com/thetruezubzero-pixel/map
+
+# Keywords (max 100 characters total)
+keywords: "business research, public records, entity resolution, mapping, due diligence"
+
+# Release Notes
+release_notes: |
+  Version 1.0.0 - Initial Release
+  - Full-featured research platform optimized for iPhone
+  - Real-time mapping with multiple data layers
+  - Multi-agent AI research pipeline
+  - Live alert subscriptions
+  - Entity graph visualization
+  - Responsive design for all screen sizes
+
+# Support & Marketing URLs
+support_url: "https://github.com/thetruezubzero-pixel/map/issues"
+privacy_policy_url: "https://github.com/thetruezubzero-pixel/map/blob/main/PRIVACY.md"
+marketing_url: "https://github.com/thetruezubzero-pixel/map"
+
+# Screenshots (for App Store listing)
+screenshots:
+  iphone_55:
+    - "Map view with entity layers"
+    - "Search results with filters"
+    - "Entity detail panel with relationships"
+    - "Real-time alerts feed"
+    - "Multi-agent research pipeline"
+  iphone_67:
+    - "Full dashboard layout on larger screen"
+    - "Interactive entity graph"
+    - "Chat with platform integration"
+    - "Training progress dashboard"
+    - "Heirloom agent persistence"
+
+# Contact Info (for App Review)
+contact_info:
+  first_name: "Aether"
+  last_name: "Sovereign"
+  phone: "+1-555-000-0000"
+  email: "support@aethersovereign.local"
+  address:
+    street: "Open Source Community"
+    city: "Internet"
+    country: "US"
+
+# Ratings & Certifications
+age_rating: "4+"
+icloud_enabled: false
+game_controller_required: false
+app_clips_enabled: false
