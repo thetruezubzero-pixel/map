@@ -8,6 +8,7 @@ use governor::{
 };
 use nonzero_ext::nonzero;
 use sqlx::PgPool;
+use tokio::sync::Semaphore;
 
 use crate::config::Config;
 
@@ -20,6 +21,10 @@ pub struct AppState {
     pub http: reqwest::Client,
     pub ip_limiter: Arc<KeyedLimiter>,
     pub user_limiter: Arc<KeyedLimiter>,
+    // Caps total concurrent /ws/alerts connections process-wide -- each
+    // holds a dedicated PgListener connection for its lifetime, so this
+    // bounds how many a client can open. See config.ws_alerts_max_connections.
+    pub ws_alerts_semaphore: Arc<Semaphore>,
 }
 
 impl AppState {
@@ -41,6 +46,10 @@ impl AppState {
                 .timeout(Duration::from_secs(config.http_client_timeout_secs))
                 .build()
                 .expect("failed to build http client"),
+            // Read the count before `config` is moved into the Arc below
+            // (usize is Copy, and struct-literal fields evaluate in
+            // written order).
+            ws_alerts_semaphore: Arc::new(Semaphore::new(config.ws_alerts_max_connections)),
             config: Arc::new(config),
             db,
             ip_limiter: Arc::new(RateLimiter::keyed(ip_quota)),
