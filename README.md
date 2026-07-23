@@ -25,10 +25,6 @@ URL you can open on any device, including a phone browser.
      but the multi-agent research pipeline (`POST /research`, the
      `/swarm` dashboard) fails with a real 401 from OpenRouter. Not a
      free service -- needs an account with funded credits.
-   - `VITE_MAPBOX_ACCESS_TOKEN` (recommended -- needed for the map to
-     render) — a [free Mapbox token](https://account.mapbox.com/access-tokens/).
-     Without it the app still runs, but the map panel shows a "set your
-     token" placeholder instead of an actual map.
    - `HEIRLOOM_DEVICE_KEY` (recommended -- needed for the Heirlooms page)
      — a 64-character hex string (32 bytes), generated with
      `python3 -c "import secrets; print(secrets.token_hex(32))"`. Without
