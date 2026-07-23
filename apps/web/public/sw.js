@@ -3,9 +3,8 @@
 
 const CACHE_NAME = 'aether-v1';
 const RUNTIME_CACHE = 'aether-runtime-v1';
-const ASSETS_CACHE = 'aether-assets-v1';
 
-// Assets to cache on install (app shell)
+// App shell: minimal set for initial page load
 const CACHE_ASSETS = [
   '/',
   '/index.html',
@@ -31,7 +30,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE && cacheName !== ASSETS_CACHE) {
+          if (cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE) {
             console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
