@@ -29,7 +29,21 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 def normalize_name(name: str) -> str:
     """Normalizes a company name for exact/fuzzy matching across sources.
-    Not for display -- only for comparison."""
+    Not for display -- only for comparison.
+
+    Intentionally biases toward false NEGATIVES (stricter matching). For example:
+    - "Acme-Inc" normalizes to "acme" (punctuation removed)
+    - "Acme Inc" normalizes to "acme inc" (suffix kept after substitution)
+    These don't match after normalization, even though a human would recognize
+    them as the same company.
+
+    This bias is intentional and correct for a due-diligence tool: requiring
+    human review of near-misses is safer than auto-confirming matches that
+    look similar but differ on formatting. The cost of a false negative (a
+    match queued for human review instead of auto-confirmed) is lower than
+    a false positive (auto-confirming a wrong match). See ROADMAP.md Phase 3
+    for entity-resolution architecture and confidence scoring.
+    """
     if not name:
         return ""
 

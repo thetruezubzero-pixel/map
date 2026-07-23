@@ -255,8 +255,10 @@ SELECT
     'aether.business_registrations' AS source_topic,
     b.company_name AS entity_name,
     b.cik,
-    CONCAT('{"news_url":"', COALESCE(n.url, ''), '","sentiment_score":"',
-           CAST(n.sentiment_score AS STRING), '"}') AS evidence_json,
+    CONCAT('{"news_url":"',
+           REPLACE(REPLACE(COALESCE(n.url, ''), '\\', '\\\\'), '"', '\\"'),
+           '","sentiment_score":',
+           CAST(n.sentiment_score AS STRING), '}') AS evidence_json,
     CAST(CURRENT_TIMESTAMP AS STRING) AS detected_at,
     CAST(b.event_time AS STRING) AS window_start,
     CAST(n.event_time AS STRING) AS window_end

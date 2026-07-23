@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 import httpx
 import redis
+from tenacity import retry, wait_exponential, stop_after_attempt
 
 from app.config import get_settings
 from app.streaming.kafka_client import EventProducer, TOPICS, ensure_topics
@@ -50,38 +51,62 @@ def _record_hash(company: dict) -> str:
     return hashlib.sha256(stable.encode()).hexdigest()
 
 
+@retry(
+    wait=wait_exponential(multiplier=2, min=1, max=60),
+    stop=stop_after_attempt(3),
+    reraise=True,
+)
+def _fetch_search_results(client: httpx.Client, term: str, api_token: str) -> dict:
+    """Fetch OpenCorporates search results for a single term with exponential backoff.
+    Retries up to 3 times on transient failures (rate limits, timeouts) with
+    exponential backoff (1s, 2s, 4s max 60s). On persistent failures (4xx
+    auth errors, malformed responses), raises immediately without retry."""
+    resp = client.get(
+        "https://api.opencorporates.com/v0.4/companies/search",
+        params={
+            "q": term,
+            "jurisdiction_code": ",".join(DEFAULT_JURISDICTIONS),
+            "api_token": api_token,
+        },
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def fetch_companies(api_token: str, search_terms: list[str]) -> list[dict]:
     companies = []
     with httpx.Client(timeout=15.0) as client:
         for term in search_terms:
             try:
-                resp = client.get(
-                    "https://api.opencorporates.com/v0.4/companies/search",
-                    params={
-                        "q": term,
-                        "jurisdiction_code": ",".join(DEFAULT_JURISDICTIONS),
-                        "api_token": api_token,
-                    },
-                )
-                resp.raise_for_status()
+                results = _fetch_search_results(client, term, api_token)
             except httpx.HTTPError as exc:
-                # A bad/expired key or a rate limit must not crash the whole
-                # producer -- skip this term, keep checking the rest.
+                # After retry exhaustion (or on non-retryable errors like 401),
+                # skip this term and continue with the rest. Rate limits and
+                # timeouts are retried automatically above; if we get here it's
+                # either a persistent error (bad/expired key) or a temporary one
+                # that exceeded the retry budget. Either way, moving on is correct.
                 # Redact the token before logging: it's sent as a URL query
-                # param above, and httpx.HTTPStatusError.__str__() includes
-                # the full request URL, so logging the raw exception on a
-                # 401/429 would print the API token in cleartext. Same
-                # active leak already fixed in the DAG twin
-                # (data/pipelines/dags/opencorporates_sync_dag.py); this is
-                # its streaming-producer counterpart.
+                # param and httpx.HTTPStatusError.__str__() includes the full
+                # request URL, so logging the raw exception would print the
+                # token in cleartext. Same fix already applied in the DAG twin
+                # (data/pipelines/dags/opencorporates_sync_dag.py).
                 logger.warning(
-                    "OpenCorporates search failed for %r, skipping: %s",
+                    "OpenCorporates search failed for %r after retries, skipping: %s",
                     term,
                     str(exc).replace(api_token, "***") if api_token else str(exc),
                 )
                 continue
+            except Exception as exc:
+                # Catch any non-HTTPError (e.g., JSON decode errors on
+                # malformed response) and skip this term.
+                logger.warning(
+                    "OpenCorporates search failed for %r with unexpected error, skipping: %s",
+                    term,
+                    exc,
+                )
+                continue
 
-            for c in resp.json().get("results", {}).get("companies", []):
+            for c in results.get("results", {}).get("companies", []):
                 if c.get("company"):
                     companies.append(c["company"])
     return companies

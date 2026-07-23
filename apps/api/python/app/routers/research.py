@@ -21,6 +21,18 @@ class ReviewDecision(BaseModel):
 
 @router.post("/research", response_model=ResearchJobResponse)
 async def create_job(payload: ResearchRequest, background_tasks: BackgroundTasks) -> ResearchJobResponse:
+    """Create a new research job. Fire-and-forget enqueuing: returns immediately
+    after queueing run_research_job as a background task, which spawns the full
+    multi-agent swarm (query_analyzer → data_retriever → result_synthesizer),
+    running multiple billed OpenRouter calls per job.
+
+    Rate limit: 3 requests/minute per IP (apps/web/nginx.conf, research_zone).
+    This route is unauthenticated, so the per-IP limit is the only defense.
+    See nginx.conf's research_zone comment for the cost/rate justification.
+
+    The frontend reaches this through the gateway (/api/research, which is gated
+    by the gateway's own rate_limiter middleware), but direct calls bypass that,
+    so nginx throttles here as defense-in-depth."""
     row = await db.create_research_job(payload.query, payload.requested_by)
     background_tasks.add_task(run_research_job, row["id"], payload.query, payload.requested_by)
     return ResearchJobResponse(job_id=str(row["id"]), status=JobStatus(row["status"]))
@@ -28,6 +40,15 @@ async def create_job(payload: ResearchRequest, background_tasks: BackgroundTasks
 
 @router.get("/research/{job_id}", response_model=ResearchJobDetail)
 async def get_job(job_id: UUID) -> ResearchJobDetail:
+    """Fetch the status and result of a single research job. Cheap read-only
+    query (single PK lookup, ~10ms on normal DB load) with no side effects.
+    Not rate-limited at nginx level (falls through to the /py-api/ catch-all
+    unthrottled). The frontend polls this frequently for job status; throttling
+    would create artificial blocking on otherwise-fast reads. If this ever
+    becomes a cost center (e.g. an expensive aggregation query is added to the
+    result), move this to its own exact-match location in nginx.conf with a
+    dedicated rate limit, following the pattern of /research (create) and
+    /architect/run above it."""
     row = await db.get_research_job(job_id)
     if row is None:
         raise HTTPException(status_code=404, detail="research job not found")
@@ -54,17 +75,23 @@ async def get_job(job_id: UUID) -> ResearchJobDetail:
 
 @router.get("/research/{job_id}/trace")
 async def get_job_trace(job_id: UUID) -> dict:
-    """Full reasoning chain for one job in one place: every swarm
-    consensus round (task_history -- analyzer votes, the winning plan,
-    the retriever's single call, synthesizer votes) interleaved with
-    every orchestrator/audit event (agent_audit_log -- cache hits, job
-    failures, human review decisions), ordered by time. This doesn't
-    change how the swarm votes -- each role's instances still run
-    independently, which is what makes weighted_consensus meaningful --
-    it just exposes the chain that already connects the roles
-    (query_analyzer -> data_retriever -> result_synthesizer) for one job,
-    which today is otherwise scattered across two tables with no shared
-    view. See GET /swarm for the equivalent feed across every job."""
+    """Full reasoning chain for one job in one place: every swarm consensus
+    round (task_history -- analyzer votes, the winning plan, the retriever's
+    single call, synthesizer votes) interleaved with every orchestrator/audit
+    event (agent_audit_log -- cache hits, job failures, human review
+    decisions), ordered by time. This doesn't change how the swarm votes --
+    each role's instances still run independently, which is what makes
+    weighted_consensus meaningful -- it just exposes the chain that already
+    connects the roles (query_analyzer → data_retriever → result_synthesizer)
+    for one job, which is otherwise scattered across two tables with no shared
+    view. See GET /swarm for the equivalent feed across every job.
+
+    Rate limit: None (falls through to /py-api/ catch-all). This is a DB join
+    across two indexed tables (~50-100ms on normal load) with no side effects.
+    The UI shows this on the job detail page for introspection; throttling
+    would block legitimate debugging. If performance degrades (millions of
+    events per job), add a specific limit here following the pattern of
+    /research and /architect/run in nginx.conf."""
     row = await db.get_research_job(job_id)
     if row is None:
         raise HTTPException(status_code=404, detail="research job not found")
