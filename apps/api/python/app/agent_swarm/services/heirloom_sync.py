@@ -239,6 +239,21 @@ async def snapshot_agent_weight(pool, agent_id: UUID) -> dict:
 
 
 async def export_heirloom(pool, store: HeirloomStore, agent_id: UUID, user_id: str, device_id: str) -> HeirloomManifestEntry:
+    """`user_id` is caller-supplied (POST /heirlooms/{agent_id}/export's
+    request body), not derived from the agent itself -- a readiness
+    review found this never checked it against the agent's actual owner,
+    so `POST /heirlooms/<any-agent-uuid>/export {"user_id": "attacker", ...}`
+    succeeded for any existing agent_id, including one belonging to a
+    different user, and the resulting heirloom_manifest row then showed
+    up under `GET /heirlooms?user_id=attacker`. import_heirloom_to_successor
+    (below) already enforces the identical "heirlooms are per-user only"
+    guardrail (migrations/0008_agent_swarm.sql) for its own two-agent
+    case; this applies the same check here, against the agent's real
+    agent_registry.user_id."""
+    actual_owner = await pool.fetchval("SELECT user_id FROM agent_registry WHERE id = $1", agent_id)
+    if actual_owner != user_id:
+        raise HeirloomError(f"agent {agent_id} does not belong to user {user_id!r}")
+
     snapshot = await snapshot_agent_weight(pool, agent_id)
     return await store.store(pool, agent_id, user_id, device_id, snapshot)
 

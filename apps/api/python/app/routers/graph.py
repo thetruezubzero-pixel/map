@@ -123,7 +123,7 @@ async def get_review_queue(limit: int = 50) -> list[ResolutionCandidate]:
         ORDER BY c.confidence DESC, c.created_at ASC
         LIMIT $1
         """,
-        min(limit, 200),
+        max(1, min(limit, 200)),
     )
 
     import json

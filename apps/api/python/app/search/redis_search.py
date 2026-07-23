@@ -12,6 +12,20 @@ KEY_PREFIX = "entity:"
 
 _client: redis.Redis | None = None
 
+# RediSearch's documented special characters (query-syntax metacharacters
+# for tag/text fields) -- must be backslash-escaped before a caller-supplied
+# value is interpolated into a `@field:{value}` tag filter, same bug class
+# already fixed in elasticsearch_setup.py's top_entity_types_by_source (an
+# unescaped value there let `x" | LIMIT 1 | FROM ...` break out of the
+# filter and append arbitrary query stages). hybrid_search below has no
+# callers yet, but fixing this proactively avoids relying on "not reachable
+# yet" as the only protection once it is wired to a route.
+_TAG_SPECIAL_CHARS = ",.<>{}[]\"':;!@#$%^&*()-+=~ \t\n"
+
+
+def _escape_tag_value(value: str) -> str:
+    return "".join(f"\\{c}" if c in _TAG_SPECIAL_CHARS else c for c in value)
+
 
 def get_client() -> redis.Redis:
     global _client
@@ -94,9 +108,9 @@ def hybrid_search(
 
     filters = []
     if entity_type:
-        filters.append(f"@entity_type:{{{entity_type}}}")
+        filters.append(f"@entity_type:{{{_escape_tag_value(entity_type)}}}")
     if source:
-        filters.append(f"@source:{{{source}}}")
+        filters.append(f"@source:{{{_escape_tag_value(source)}}}")
     if radius_m and lat is not None and lon is not None:
         radius_km = radius_m / 1000
         filters.append(f"@location:[{lon} {lat} {radius_km} km]")

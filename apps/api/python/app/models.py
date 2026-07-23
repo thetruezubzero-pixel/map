@@ -73,6 +73,12 @@ class JobStatus(str, Enum):
     queued = "queued"
     running = "running"
     awaiting_review = "awaiting_review"
+    # Transient: set by POST /research/{job_id}/review's atomic claim
+    # (routers/research.py) for the short window between claiming the job
+    # and finalize_task settling every task_history row -- a GET
+    # /research/{job_id} landing in that window needs a real enum member
+    # here, not a ValueError from JobStatus(row["status"]).
+    reviewing = "reviewing"
     completed = "completed"
     failed = "failed"
 
