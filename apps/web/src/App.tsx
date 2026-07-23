@@ -36,6 +36,15 @@ function App() {
   const dialogCloseButtonRef = useRef<HTMLButtonElement>(null)
   const lastFocusedElementRef = useRef<HTMLElement | null>(null)
 
+  // Register service worker for PWA: offline caching + installable app
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((e) => {
+        console.log('[PWA] Service Worker registration skipped (not critical)', e)
+      })
+    }
+  }, [])
+
   // The mobile filters/results overlay is `role="dialog" aria-modal="true"`,
   // but confirmed live it wasn't actually behaving like one: opening it
   // never moved focus in (so a keyboard/screen-reader user stayed on

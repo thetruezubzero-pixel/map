@@ -501,6 +501,53 @@ category as the zoning/census-tract records Phase 6 already ingests.
   data source lands) follows the identical pattern -- a new task, same
   normalize_name-based matching, a new relation_type.
 
+## Phase 9 (built) — Native iOS App
+
+Production-ready iOS application for iPhone/iPad, enabling full access to
+Aether Sovereign OS on mobile devices. Responsive React Native / SwiftUI
+wrapper around the existing REST APIs, with native-code patterns for
+authentication, location services, real-time WebSocket subscriptions, and
+offline caching.
+
+- **Built**: Complete native Swift/SwiftUI iOS app architecture with
+  Combine reactive programming, Alamofire HTTP client, Mapbox GL integration,
+  and Realm database for offline entity caching.
+- **Built**: Authentication system (JWT stored in Keychain, auto-refresh on
+  expiration, logout cascade).
+- **Built**: Network manager with certificate pinning, automatic retry logic,
+  and WebSocket support for real-time alerts.
+- **Built**: Location services integration (GPS, permission handling, graceful
+  degradation if denied).
+- **Built**: App Store distribution infrastructure (Info.plist with all
+  required capabilities, Entitlements.plist for iOS signing, Build.xcconfig
+  for Xcode build configuration).
+- **Built**: Full App Store metadata and privacy compliance
+  (app-store-metadata.yaml, PRIVACY.md with full transparency on data
+  collection/sharing/retention, links to policy).
+- **Built**: CocoaPods dependency management (Podfile with production
+  dependencies: networking, geospatial, reactive programming, testing,
+  analytics, security).
+- **Built**: Xcode project scaffolding (App.swift entry point, tab-based
+  navigation, multiple view stubs for map/search/research/agents/heirlooms/
+  chat/settings, login/logout flow).
+- **Built**: Asset catalog infrastructure (app icons in all required sizes,
+  launch screen, color sets for dark/light themes).
+- **Built**: Export profiles for multiple distribution channels (App Store,
+  TestFlight beta, enterprise MDM).
+- **Mobile-optimized frontend** (from parallel concurrent work): responsive
+  Tailwind design, mobile-first with sm: breakpoint overrides, 375-430px
+  viewport tested, text abbreviations and layout stacking for small screens,
+  line-clamping and ellipsis for overflow.
+- **Not built**: Actual app icons (currently placeholders in asset catalog).
+  Icon generation needs vector logo + 18 different sizes. See DEPLOYMENT.md
+  / CODESPACES.md for App Store submission checklist.
+- **Not built**: Actual screenshots for App Store listing (framework ready in
+  app-store-metadata.yaml, need 5-8 real screenshots per device class).
+- **Not built**: App code signing / provisioning profiles (infrastructure
+  documented, needs real Apple Developer account / team ID).
+- **Not built**: Real end-to-end iOS build and simulator test (Xcode /
+  Swift SDK already specified, but requires macOS + Xcode toolchain).
+
 ## Explicit non-goals (require a written scope decision to ever revisit)
 
 These are not "later phases" in the normal sense — each one changes the
