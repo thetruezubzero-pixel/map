@@ -609,6 +609,47 @@ offline caching.
 - **Not built**: Real end-to-end iOS build and simulator test (Xcode /
   Swift SDK already specified, but requires macOS + Xcode toolchain).
 
+## Phase 11 (built) — agent-driven repository maintenance & security (bounded)
+
+Explicit scope decision by the repo owner: the agents should help keep the
+repository itself secure, clean, and maintained — but through the same
+bounded, human-reviewed channel every other agent capability uses, never
+via unrestricted or autonomous control. This phase widens what the
+Architect is *aware of*, not what it may write on its own.
+
+Motivation: this repo's own CI was silently red for a while because a
+GitHub Action was pinned to a version GitHub later hard-deprecated
+(`actions/upload-artifact@v3`) — a maintenance-rot class no agent was
+watching for.
+
+- **Built (read-only)**: `introspection._scan_repo_health` adds a
+  `repo_health` section to the Architect's digital-twin snapshot:
+  `deprecated_actions` (GitHub Actions pinned below GitHub's current
+  baseline, per `_MIN_ACTION_MAJOR`) and `committed_secret_files`
+  (secret-bearing files that appear tracked in git, via a narrow,
+  higher-confidence matcher — `_looks_like_committed_secret` — that never
+  mis-flags security tooling like `secret-scrub.sh` or templates like
+  `.env.example`). Runs via `asyncio.to_thread` like every other blocking
+  call in that module; it grants no write capability, it only reads.
+- The Architect surfaces these as ranked plan items (a committed secret is
+  urgent human action; a deprecated action is an `infra_change` naming the
+  exact file / `action@vN` / recommended version). Workflow and secret
+  fixes are **never** `safe_to_autoimplement` — they route to a human,
+  because CI/workflow files run with real secrets and a bad edit there is a
+  credential-exfiltration path.
+
+**Boundaries reaffirmed — unchanged, and load-bearing precisely because
+this phase is about security:** agents still never push to or merge `main`
+directly (`_assert_never_main`); still never read `.env`/key/secret-shaped
+files (the `_is_source_readable` denylist is the real boundary, not the
+flag); still never auto-implement `code_change`/`infra_change`; and the
+auto-merge path (Phase 5c) stays scoped to allowlisted docs only. Giving an
+agent that is reachable by untrusted input (chat, external public records)
+unrestricted repo control or secret access would be the *vulnerability*,
+not the defense — so it stays out, by design. Widening any of those
+specific boundaries would be a further, separate written decision here,
+with the abuse analysis spelled out, not a side effect of this phase.
+
 ## Explicit non-goals (require a written scope decision to ever revisit)
 
 These are not "later phases" in the normal sense — each one changes the

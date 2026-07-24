@@ -118,6 +118,30 @@ docker-compose.yml   Full local dev stack
   `_is_source_readable`'s denylist in the same commit -- don't rely on
   the flag defaulting off as the only protection, since the whole point
   of this feature is that someone will eventually turn it on.
+- `introspection._scan_repo_health` (Phase 11) gives the Architect
+  read-only maintenance/security *awareness* -- `deprecated_actions`
+  (GitHub Actions pinned below `_MIN_ACTION_MAJOR`, the class that
+  silently broke this repo's CI via `actions/upload-artifact@v3`) and
+  `committed_secret_files` (secret-bearing tracked files, matched by the
+  narrow `_looks_like_committed_secret`, deliberately narrower than
+  `_is_source_readable`'s read-denylist so security tooling like
+  `secret-scrub.sh` and templates like `.env.example` are never
+  mis-flagged as leaks). It is read-only and grants no write capability;
+  it runs via `asyncio.to_thread` like every other blocking call in that
+  module. The Architect turns its findings into ranked plan items, but a
+  deprecated-action or committed-secret fix is an `infra_change`/
+  `code_change` that is **never** `safe_to_autoimplement` -- workflow
+  files run with real CI secrets, so a bad edit there is a
+  credential-exfiltration path and must go through a human. This scan is
+  awareness, not control: it does not, and must not, be extended into
+  letting an untrusted-input-facing agent (chat, or a research role over
+  external records) autonomously modify workflows, infra, secrets, or
+  `main` -- that widening is the security hole this whole guardrail
+  section exists to prevent, and needs its own written ROADMAP.md scope
+  decision with an abuse analysis, not an incidental extension. If you add
+  a new deprecated-action baseline or a new committed-secret convention,
+  extend `_MIN_ACTION_MAJOR` / `_looks_like_committed_secret` in the same
+  commit. See ROADMAP.md "Phase 11".
 - **Any route that triggers a real, billed OpenRouter call needs its own
   rate limit and a timeout budget that covers its own worst-case retry
   latency -- being reached through `web`'s nginx or the gateway is not
