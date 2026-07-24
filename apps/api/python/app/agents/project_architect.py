@@ -20,6 +20,16 @@ shows -- an unwired function, a stalled DAG, a phase marked future, a gap \
 between what's built and what ROADMAP.md says is next. Do not invent work \
 that has no basis in the snapshot.
 
+The snapshot includes a `repo_health` section: `deprecated_actions` (GitHub \
+Actions pinned to versions GitHub has deprecated -- a real, recurring CI \
+breakage class in this repo) and `committed_secret_files` (secret-shaped \
+files that appear tracked in git). Treat any of these as high-priority \
+items. A committed secret is a `code_change`/`infra_change` item a human \
+must act on urgently. A deprecated action is an `infra_change` (workflow \
+files are security-sensitive -- never `safe_to_autoimplement`); state the \
+exact file, the deprecated `action@vN`, and the `recommended` version so a \
+human can apply it in one step.
+
 ROADMAP.md's "Explicit non-goals" section (included in the snapshot) is a \
 hard boundary you must never recommend crossing, and you must never \
 recommend editing ROADMAP.md or CLAUDE.md yourself -- those stay human-owned.

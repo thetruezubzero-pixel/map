@@ -269,6 +269,108 @@ async def _read_full_source_tree(project_root: Path, *, max_total_chars: int) ->
     return await asyncio.to_thread(_read_full_source_tree_sync, project_root, max_total_chars=max_total_chars)
 
 
+# --- Repo health & security scan (Phase 11) -----------------------------
+# Read-only maintenance/security awareness for the Architect: it surfaces
+# the exact class of rot that has actually broken this repo's CI (a
+# GitHub Action pinned to a version GitHub later hard-deprecated -- see
+# ROADMAP.md "Phase 11") plus any secret-shaped file that got committed.
+# Findings land in the snapshot as plain facts; the Architect proposes
+# fixes through the SAME bounded path as everything else (doc/config PRs
+# it may auto-propose; code/infra fixes flagged for a human via
+# `infra_change`/`code_change`, never auto-implemented). This scan grants
+# no new write capability -- it only reads.
+
+# Minimum non-deprecated major version for common GitHub Actions. GitHub
+# HARD-fails workflows using upload-/download-artifact v3 or below; the
+# rest are soft-deprecated but flagged so the Architect can raise them
+# before they become a hard failure. Extend this table as GitHub bumps
+# its baselines (kept by hand, same as the other inventories here).
+_MIN_ACTION_MAJOR = {
+    "actions/upload-artifact": 4,
+    "actions/download-artifact": 4,
+    "actions/checkout": 4,
+    "actions/setup-node": 4,
+    "actions/setup-python": 5,
+    "actions/setup-java": 4,
+    "actions/cache": 4,
+}
+_ACTION_USES_RE = re.compile(r"uses:\s*([A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)@v(\d+)")
+
+# A committed secret is a narrower, higher-confidence signal than the
+# read-denylist in _is_source_readable (which over-blocks on any
+# secret/credential/password token to be safe). Here we only flag files
+# that are actually secret-BEARING by convention, so security tooling like
+# `.claude/hooks/secret-scrub.sh` is never mis-flagged as a leaked secret.
+_COMMITTED_SECRET_SUFFIXES = (".key", ".pem", ".p12", ".pfx")
+_COMMITTED_SECRET_NAMES = {
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", ".netrc", ".pgpass",
+    "credentials.json", "secrets.yaml", "secrets.yml",
+}
+
+
+def _looks_like_committed_secret(rel_path: str) -> bool:
+    name = Path(rel_path).name.lower()
+    if name.startswith(".env") and not name.endswith(".example"):
+        return True  # .env, .env.local, .env.production ... but not .env.example
+    if name.endswith(_COMMITTED_SECRET_SUFFIXES):
+        return True
+    return name in _COMMITTED_SECRET_NAMES
+
+
+def _scan_repo_health_sync(project_root: Path) -> dict:
+    """Synchronous filesystem/git scan -- always called via
+    asyncio.to_thread (see _scan_repo_health), same single-worker
+    event-loop discipline as every other blocking call in this module."""
+    deprecated_actions: list[dict] = []
+    workflow_count = 0
+    wf_dir = project_root / ".github" / "workflows"
+    if wf_dir.exists():
+        for wf in sorted(list(wf_dir.glob("*.yml")) + list(wf_dir.glob("*.yaml"))):
+            workflow_count += 1
+            try:
+                text = wf.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                logger.warning("repo-health could not read %s: %s", wf, exc)
+                continue
+            for m in _ACTION_USES_RE.finditer(text):
+                action, major = m.group(1), int(m.group(2))
+                min_major = _MIN_ACTION_MAJOR.get(action)
+                if min_major is not None and major < min_major:
+                    deprecated_actions.append(
+                        {
+                            "workflow": wf.name,
+                            "action": f"{action}@v{major}",
+                            "recommended": f"{action}@v{min_major}",
+                        }
+                    )
+
+    # Committed secret-shaped files: ask git what's tracked (not just what's
+    # on disk -- a gitignored local .env must NOT be flagged), then match
+    # the narrow secret conventions above.
+    committed_secret_files: list[str] = []
+    if (project_root / ".git").exists():
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(project_root), "ls-files"],
+                capture_output=True, text=True, timeout=10, check=True,
+            )
+            committed_secret_files = [
+                rel for rel in result.stdout.splitlines() if _looks_like_committed_secret(rel)
+            ]
+        except (subprocess.SubprocessError, OSError) as exc:
+            logger.warning("repo-health git ls-files failed: %s", exc)
+
+    return {
+        "workflow_count": workflow_count,
+        "deprecated_actions": deprecated_actions,
+        "committed_secret_files": committed_secret_files,
+    }
+
+
+async def _scan_repo_health(project_root: Path) -> dict:
+    return await asyncio.to_thread(_scan_repo_health_sync, project_root)
+
+
 def _read_dag_inventory(project_root: Path) -> list[str]:
     dags_dir = project_root / "data" / "pipelines" / "dags"
     if not dags_dir.exists():
@@ -341,6 +443,11 @@ async def build_project_snapshot(pool) -> dict:
     if git_log is not None:
         snapshot["recent_commits"] = git_log
 
+    # Read-only maintenance/security awareness (Phase 11). Always present so
+    # the Architect can flag deprecated actions / committed secrets before
+    # they bite -- no write capability, just facts to plan from.
+    snapshot["repo_health"] = await _scan_repo_health(project_root)
+
     snapshot["gateway_routes"] = GATEWAY_ROUTES
     snapshot["python_api_routers"] = PYTHON_API_ROUTERS
 
@@ -378,10 +485,22 @@ def summarize_snapshot(snapshot: dict) -> str:
         truncated_note = " (truncated -- hit the char cap)" if source_tree.get("truncated") else ""
         source_note = f"; full source visible: {source_tree.get('total_files', 0)} files{truncated_note}"
 
+    health = snapshot.get("repo_health", {})
+    n_deprecated = len(health.get("deprecated_actions", []))
+    n_secrets = len(health.get("committed_secret_files", []))
+    health_note = ""
+    if n_deprecated or n_secrets:
+        parts = []
+        if n_deprecated:
+            parts.append(f"{n_deprecated} deprecated action(s)")
+        if n_secrets:
+            parts.append(f"{n_secrets} committed secret file(s)")
+        health_note = f"; repo-health flags: {', '.join(parts)}"
+
     return (
         f"{entity_total} entities across {len(db.get('entities_by_source_type', []))} "
         f"source/type pairs, {agent_total} registered agents, {n_dags} DAGs, "
-        f"{n_commits} recent commits observed{swarm_note}{source_note}"
+        f"{n_commits} recent commits observed{swarm_note}{source_note}{health_note}"
     )
 
 

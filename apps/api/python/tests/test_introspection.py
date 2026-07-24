@@ -2,8 +2,10 @@ import pytest
 
 from app.agent_swarm.introspection import (
     _is_source_readable,
+    _looks_like_committed_secret,
     _read_full_source_tree,
     _read_full_source_tree_sync,
+    _scan_repo_health_sync,
     summarize_snapshot,
 )
 
@@ -241,3 +243,70 @@ def test_read_full_source_tree_async_wrapper_delegates_to_sync_implementation(tm
     result = asyncio.run(_read_full_source_tree(tmp_path, max_total_chars=1_000_000))
 
     assert {f["path"] for f in result["files"]} == {"app.py"}
+
+
+# --- Phase 11: repo-health & security scan -------------------------------
+
+@pytest.mark.parametrize(
+    "path",
+    [".env", ".env.local", ".env.production", "config/.env", "server.key",
+     "certs/tls.pem", "id_rsa", "app/.netrc", "secrets.yml", "credentials.json"],
+)
+def test_looks_like_committed_secret_flags_real_secrets(path):
+    assert _looks_like_committed_secret(path) is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    # The security tooling and templates must NEVER be flagged as leaked
+    # secrets -- these all contain secret-ish tokens or shapes but aren't.
+    [".env.example", "apps/gateway/.env.example", ".claude/hooks/secret-scrub.sh",
+     "apps/api/python/app/pii_scrub.py", "docs/password-reset.md", "app/main.py",
+     "README.md", "credentials.md"],
+)
+def test_looks_like_committed_secret_ignores_non_secrets(path):
+    assert _looks_like_committed_secret(path) is False
+
+
+def test_scan_repo_health_flags_deprecated_actions(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text(
+        "jobs:\n  b:\n    steps:\n"
+        "      - uses: actions/checkout@v4\n"          # current -> not flagged
+        "      - uses: actions/upload-artifact@v3\n"   # hard-deprecated -> flagged
+        "      - uses: actions/setup-python@v3\n",     # below v5 -> flagged
+        encoding="utf-8",
+    )
+    result = _scan_repo_health_sync(tmp_path)
+    assert result["workflow_count"] == 1
+    flagged = {d["action"] for d in result["deprecated_actions"]}
+    assert "actions/upload-artifact@v3" in flagged
+    assert "actions/setup-python@v3" in flagged
+    assert "actions/checkout@v4" not in flagged
+    rec = {d["action"]: d["recommended"] for d in result["deprecated_actions"]}
+    assert rec["actions/upload-artifact@v3"] == "actions/upload-artifact@v4"
+
+
+def test_scan_repo_health_clean_when_no_workflows(tmp_path):
+    result = _scan_repo_health_sync(tmp_path)
+    assert result == {"workflow_count": 0, "deprecated_actions": [], "committed_secret_files": []}
+
+
+def test_summarize_snapshot_surfaces_repo_health_flags():
+    snap = _base_snapshot([])
+    snap["repo_health"] = {
+        "workflow_count": 3,
+        "deprecated_actions": [{"workflow": "ci.yml", "action": "actions/upload-artifact@v3", "recommended": "actions/upload-artifact@v4"}],
+        "committed_secret_files": [".env"],
+    }
+    summary = summarize_snapshot(snap)
+    assert "repo-health flags" in summary
+    assert "1 deprecated action(s)" in summary
+    assert "1 committed secret file(s)" in summary
+
+
+def test_summarize_snapshot_omits_health_note_when_clean():
+    snap = _base_snapshot([])
+    snap["repo_health"] = {"workflow_count": 3, "deprecated_actions": [], "committed_secret_files": []}
+    assert "repo-health flags" not in summarize_snapshot(snap)
