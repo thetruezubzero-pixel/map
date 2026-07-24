@@ -231,10 +231,18 @@ services:
       AGENT_AUTO_MERGE_ENABLED: ${AGENT_AUTO_MERGE_ENABLED:-false}
       AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD: ${AGENT_AUTO_MERGE_CONFIDENCE_THRESHOLD:-0.9}
       AGENT_AUTO_MERGE_MIN_TRACK_RECORD: ${AGENT_AUTO_MERGE_MIN_TRACK_RECORD:-10}
-      # Phase 5d -- see ROADMAP.md "Phase 5d". Default off; the denylist
-      # in introspection._is_source_readable (never .env/secrets/keys)
-      # applies regardless of this flag.
-      AGENT_FULL_SOURCE_VISIBILITY_ENABLED: ${AGENT_FULL_SOURCE_VISIBILITY_ENABLED:-false}
+      # Phase 5d / Phase 11 -- see ROADMAP.md. Default ON per the repo
+      # owner's "give the agents full informational access" scope decision:
+      # the Architect's snapshot includes real source file contents so its
+      # maintenance/security planning is grounded in the actual code. The
+      # denylist in introspection._is_source_readable (never
+      # .env/secrets/keys/credentials) still applies unconditionally --
+      # that's the boundary, not the flag. Cost note: with this on AND an
+      # OPENROUTER_API_KEY set, every Architect cycle embeds the readable
+      # source (~1MB, capped by MAX_CHARS below) in its prompt, so it costs
+      # real tokens per run -- set this to false to go back to the curated
+      # summary if that matters for your budget.
+      AGENT_FULL_SOURCE_VISIBILITY_ENABLED: ${AGENT_FULL_SOURCE_VISIBILITY_ENABLED:-true}
       AGENT_FULL_SOURCE_VISIBILITY_MAX_CHARS: ${AGENT_FULL_SOURCE_VISIBILITY_MAX_CHARS:-2000000}
     volumes:
       # Dev-only: gives introspection.py real ROADMAP.md/DAG/git-log
