@@ -26,4 +26,4 @@ jobs:
           python-version: '3.12'
 
       - name: Deprecated-action + committed-secret scan
-        run: python scripts/repo_health_check.py .
+        run: python scripts/repo_health_check.py
