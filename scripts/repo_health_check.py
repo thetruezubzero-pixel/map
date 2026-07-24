@@ -15,8 +15,13 @@ introspection._MIN_ACTION_MAJOR by tests/test_repo_health_script.py (a
 parity test), so the two can't silently drift.
 
 Usage:
-  python scripts/repo_health_check.py [REPO_ROOT]   # exit 1 if any finding
-  python scripts/repo_health_check.py --json        # machine-readable
+  python scripts/repo_health_check.py          # exit 1 if any finding
+  python scripts/repo_health_check.py --json   # machine-readable
+
+Always scans THIS repository (the one containing the script), derived from
+the script's own location -- it deliberately does NOT take a target path
+from the command line, so there's no untrusted-path source flowing into
+the file reads / git subprocess below.
 """
 
 from __future__ import annotations
@@ -105,11 +110,14 @@ def scan(project_root: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Repository health & security gate")
-    parser.add_argument("root", nargs="?", default=".", help="repo root (default: cwd)")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args()
 
-    root = Path(args.root).resolve()
+    # Scan THIS repo, derived from the script's own location -- not a path
+    # taken from argv. A CI gate should check its own tree, and accepting an
+    # arbitrary root from the command line is an unnecessary untrusted-path
+    # source (CodeQL py/path-injection) for zero real benefit here.
+    root = Path(__file__).resolve().parents[1]
     findings = scan(root)
 
     if args.json:

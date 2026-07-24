@@ -49,7 +49,7 @@ df -h "${REPO_ROOT}" | tail -1 || true
 # --- security/health gate ----------------------------------------------
 echo "maintenance: running repo-health/security scan..."
 if command -v python3 >/dev/null 2>&1; then
-  python3 "${REPO_ROOT}/scripts/repo_health_check.py" "${REPO_ROOT}" || {
+  python3 "${REPO_ROOT}/scripts/repo_health_check.py" || {
     echo "maintenance: ⚠️  repo-health scan found issues (see above)." >&2
     exit 1
   }
