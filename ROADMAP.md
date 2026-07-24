@@ -637,6 +637,25 @@ watching for.
   fixes are **never** `safe_to_autoimplement` — they route to a human,
   because CI/workflow files run with real secrets and a bad edit there is a
   credential-exfiltration path.
+- **Built (always-on defensive gate)**: `scripts/repo_health_check.py` +
+  `.github/workflows/repo-health.yml` run the same deprecated-action /
+  committed-secret checks as a stdlib-only CI gate that **fails the build**
+  the moment either appears — no OpenRouter, no `pip install`, so it works
+  even without a key and independently of whether the Architect ever runs.
+  This is the automatic counterpart to the Architect's awareness scan; the
+  two baselines are kept in lockstep by a parity test
+  (`tests/test_repo_health_script.py`). This is the change that would have
+  caught the `upload-artifact@v3` breakage on the PR instead of after merge.
+- **Built (richer awareness)**: `AGENT_FULL_SOURCE_VISIBILITY_ENABLED` now
+  defaults **on** in `docker-compose.yml` (Phase 5d's flag), so the
+  Architect plans against real source contents — the `_is_source_readable`
+  secret denylist still applies unconditionally (never `.env`/keys/
+  secrets). Real per-cycle OpenRouter token cost when a key is set; flip to
+  false to return to the curated summary.
+- **Built (environment cleanup/maintenance)**: `scripts/maintenance.sh`
+  prunes regenerable caches (and, with `--deep`, build outputs), reports
+  disk, and runs the health gate at the end — safe, idempotent housekeeping
+  for a dev container / Codespace.
 
 **Boundaries reaffirmed — unchanged, and load-bearing precisely because
 this phase is about security:** agents still never push to or merge `main`

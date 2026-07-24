@@ -1,0 +1,29 @@
+name: Repo Health & Security
+
+# Always-on defensive gate (ROADMAP.md Phase 11): fails the build if a
+# GitHub Action is pinned to a version GitHub has deprecated (the class
+# that silently broke this repo's CI via actions/upload-artifact@v3) or if
+# a secret-shaped file gets committed. Dependency-free stdlib check, so it
+# runs fast with a bare python -- no OpenRouter, no pip install. This is
+# the automatic counterpart to the Architect's read-only awareness scan.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Deprecated-action + committed-secret scan
+        run: python scripts/repo_health_check.py .
