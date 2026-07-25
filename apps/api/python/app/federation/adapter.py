@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from app.federation import protocol
+from app.federation import hub_client, protocol
 from app.federation.protocol import AuditLedger, Capability, ServiceManifest
 
 SERVICE_ID = "aether"
@@ -67,8 +67,32 @@ def build_manifest(base_url: str = "http://gateway:8080") -> ServiceManifest:
 
 
 async def record(action: str, payload: dict[str, Any], actor: str = "") -> None:
-    """Append a federation audit event without blocking the event loop."""
+    """Append a federation audit event and (if a hub is configured) forward it.
+
+    The ledger write goes through a thread so it never blocks the event loop;
+    the hub push is fire-and-forget and fails soft, so hub downtime never
+    affects this service.
+    """
     await asyncio.to_thread(ledger.append, action, payload, actor)
+    if hub_client.enabled():
+        asyncio.create_task(
+            hub_client.emit(f"service.{SERVICE_ID}", action, payload, SERVICE_ID)
+        )
+
+
+async def announce() -> dict[str, Any]:
+    """Register with the hub and emit a 'service.online' event, if configured.
+
+    Called on startup. A no-op that returns ``{"enabled": False}`` unless
+    ``FEDERATION_HUB_URL`` is set, so default deployments are unaffected.
+    """
+    if not hub_client.enabled():
+        return {"enabled": False}
+    registered = await hub_client.register(build_manifest().to_dict())
+    emitted = await hub_client.emit(
+        f"service.{SERVICE_ID}", "service.online", {"service_id": SERVICE_ID}, SERVICE_ID
+    )
+    return {"enabled": True, "registered": registered, "emitted": emitted}
 
 
 @router.get("/federation/health")
