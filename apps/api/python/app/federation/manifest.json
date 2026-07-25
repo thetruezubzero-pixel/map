@@ -1,0 +1,38 @@
+{
+  "federation_version": "1.0",
+  "service_id": "aether",
+  "display_name": "Aether Sovereign OS -- Research Platform",
+  "kind": "service",
+  "language": "python",
+  "base_url": "http://gateway:8080",
+  "health_path": "/federation/health",
+  "audit_path": "/federation/audit",
+  "allowed_origins": [],
+  "allow_credentials": true,
+  "capabilities": [
+    {
+      "name": "research.create-job",
+      "method": "POST",
+      "path": "/research",
+      "description": "Queue a public-records research job (human-reviewed).",
+      "equivalence": "research",
+      "auth_required": false
+    },
+    {
+      "name": "graph.query",
+      "method": "POST",
+      "path": "/graph/query",
+      "description": "Entity-resolution graph query over public records.",
+      "equivalence": "search",
+      "auth_required": false
+    },
+    {
+      "name": "analytics.top-entity-types",
+      "method": "GET",
+      "path": "/analytics/top-entity-types",
+      "description": "Aggregated entity-type counts by source.",
+      "equivalence": "search",
+      "auth_required": false
+    }
+  ]
+}

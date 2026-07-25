@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import db
 from app.config import get_settings
+from app.federation.adapter import router as federation_router
 from app.routers import agent_swarm, analytics, architect, chat, graph, health, research
 
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +45,10 @@ def create_app() -> FastAPI:
     app.include_router(agent_swarm.router)
     app.include_router(architect.router)
     app.include_router(chat.router)
+    # Federation adapter (/federation/*): read-only self-description + a
+    # tamper-evident audit chain the Neural Swarm hub verifies. No new write
+    # path or person-entity surface -- see app/federation/__init__.py.
+    app.include_router(federation_router)
 
     return app
 

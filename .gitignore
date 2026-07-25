@@ -22,6 +22,9 @@ apps/api/python/.env
 # Redis dump files from local dev runs
 dump.rdb
 
+# Federation runtime state (tamper-evident audit ledger, regenerated at runtime)
+apps/api/python/.federation_ledger.json
+
 # OS/editor
 .DS_Store
 
