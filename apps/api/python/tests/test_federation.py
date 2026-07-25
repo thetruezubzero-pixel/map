@@ -13,7 +13,9 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.federation import adapter, protocol
+import httpx
+
+from app.federation import adapter, hub_client, protocol
 from app.federation.protocol import AuditLedger, verify_chain
 
 
@@ -84,3 +86,40 @@ def test_federation_audit_export_verifiable():
     body = resp.json()
     assert body["service"] == "aether"
     assert verify_chain(body["records"])["intact"]
+
+
+# -- outbound hub client ---------------------------------------------------
+def test_hub_client_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("FEDERATION_HUB_URL", raising=False)
+    assert hub_client.enabled() is False
+    # Disabled calls are safe no-ops that report False without any network.
+    assert asyncio.run(hub_client.register({"service_id": "aether"})) is False
+
+
+def test_hub_client_register_and_emit_hit_expected_endpoints(monkeypatch):
+    monkeypatch.setenv("FEDERATION_HUB_URL", "http://hub.local")
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, dict(request.url.params)))
+        return httpx.Response(200, json={"ok": True})
+
+    transport = httpx.MockTransport(handler)
+    assert asyncio.run(
+        hub_client.register({"service_id": "aether"}, transport=transport)
+    ) is True
+    assert asyncio.run(
+        hub_client.emit("service.aether", "t", {"n": 1}, "aether", transport=transport)
+    ) is True
+
+    paths = [p for p, _ in seen]
+    assert "/federation/register" in paths
+    assert "/federation/bus/publish" in paths
+    publish_params = dict(seen[1][1])
+    assert publish_params["source"] == "aether"
+    assert publish_params["topic"] == "service.aether"
+
+
+def test_announce_noop_when_disabled(monkeypatch):
+    monkeypatch.delenv("FEDERATION_HUB_URL", raising=False)
+    assert asyncio.run(adapter.announce()) == {"enabled": False}

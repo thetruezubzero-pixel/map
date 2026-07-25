@@ -18,6 +18,14 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(app: FastAPI):
     # Pool is created lazily on first use (see db.get_pool) so the service
     # can boot and serve /health even if Postgres isn't reachable yet.
+    # Announce this service to the federation hub if FEDERATION_HUB_URL is set
+    # (no-op otherwise; fails soft so hub downtime never blocks startup).
+    from app.federation.adapter import announce
+
+    try:
+        await announce()
+    except Exception:  # never let federation wiring break boot
+        logging.getLogger(__name__).warning("federation announce failed", exc_info=True)
     yield
     await db.close_pool()
 
